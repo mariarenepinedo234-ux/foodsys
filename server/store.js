@@ -30,6 +30,7 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
   if(!db.prepare('PRAGMA table_info(items)').all().some(c=>c.name==='combo_eligible')) {
     db.exec("ALTER TABLE items ADD COLUMN combo_eligible INTEGER NOT NULL DEFAULT 0; UPDATE items SET combo_eligible=1 WHERE id IN (SELECT MIN(id) FROM items WHERE kind='drink' GROUP BY date)");
   }
+  if(!db.prepare('PRAGMA table_info(items)').all().some(c=>c.name==='photo')) db.exec("ALTER TABLE items ADD COLUMN photo TEXT NOT NULL DEFAULT ''");
   const all = (sql,...args) => db.prepare(sql).all(...args);
   const get = (sql,...args) => db.prepare(sql).get(...args);
   const run = (sql,...args) => db.prepare(sql).run(...args);
@@ -64,7 +65,7 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     const reservation=source==='public' || body.type==='reservation';
     if(!reservation && date!==today()) fail('Las ventas deben corresponder a hoy.');
     if(!reservation) openCash();
-    const customer=String(body.customer||'').trim().slice(0,100);
+    const customer=String(body.customer||'').trim().slice(0,100) || (source==='staff'?'Cliente sin nombre':'');
     if(!customer) fail('Escribe el nombre del comensal.');
     if(!Array.isArray(body.lines) || body.lines.length<1 || body.lines.length>30) fail('Agrega al menos un plato.');
     const allocations=new Map(), lines=[]; let total=0;
@@ -114,8 +115,10 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
       const name=String(item.name||'').trim().slice(0,100), stock=Number(item.stock);
       if(!name||!['soup','main','drink','extra'].includes(item.kind)||!Number.isInteger(stock)||stock<0||stock>10000) fail('Revisa nombre, categoría y cantidad de cada plato.');
       const price=money(item.price);
+      if(item.photo!==undefined && (typeof item.photo!=='string' || item.photo.length>200000 || (item.photo && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(item.photo)))) fail('Foto inválida. Usa una imagen JPEG, PNG o WebP de hasta 150 KB.');
       if(item.id) {const old=get('SELECT * FROM items WHERE id=? AND date=?',Number(item.id),date);if(!old) fail('Plato inválido.');if(stock<old.used) fail(`${name}: ya hay ${old.used} porciones comprometidas.`); if(old.used && old.kind!==item.kind) fail('No puedes cambiar la categoría de un plato comprometido.');run('UPDATE items SET name=?,kind=?,price=?,stock=? WHERE id=?',name,item.kind,price,stock,old.id);keep.push(old.id);}
       else keep.push(Number(run('INSERT INTO items(date,name,kind,price,stock) VALUES (?,?,?,?,?)',date,name,item.kind,price,stock).lastInsertRowid));
+      if(item.photo!==undefined) run('UPDATE items SET photo=? WHERE id=?',item.photo,keep[keep.length-1]);
       run('UPDATE items SET combo_eligible=? WHERE id=?',item.kind==='drink'&&item.combo_eligible?1:0,keep[keep.length-1]);
     }
     for(const old of all('SELECT * FROM items WHERE date=?',date)) if(!keep.includes(old.id)) {if(old.used || get('SELECT order_id FROM allocations WHERE item_id=?',old.id)) fail('No puedes eliminar un plato con historial de pedidos. Puedes dejar su cantidad igual a las porciones comprometidas.');run('DELETE FROM items WHERE id=?',old.id);}

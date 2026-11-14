@@ -7,7 +7,7 @@ import { createStore, checkPassword, fail, money } from './store.js';
 export function createApp(store) {
  const app=express(), clients=new Set(), attempts=new Map();
  app.disable('x-powered-by');
- app.use(express.json({limit:'100kb'}));
+ app.use((req,res,next)=>req.path==='/api/menu'?next():express.json({limit:'100kb'})(req,res,next));
  app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');next();});
  const notify=()=>{for(const res of clients) res.write('data: update\n\n');};
  const auth=(...roles)=>(req,res,next)=>{try{
@@ -33,7 +33,7 @@ export function createApp(store) {
  app.post('/api/orders',staff,(req,res)=>{const order=store.createOrder(req.body);notify();res.status(201).json(order);});
  app.post('/api/orders/:id/pay',staff,(req,res)=>{store.transaction(()=>store.pay(Number(req.params.id),req.body.method));notify();res.json({ok:true});});
  app.post('/api/orders/:id/status',auth(),(req,res)=>{store.transition(Number(req.params.id),req.body.status,req.user.role);notify();res.json({ok:true});});
- app.post('/api/menu',admin,(req,res)=>{store.saveMenu(req.body);notify();res.json({ok:true});});
+ app.post('/api/menu',admin,express.json({limit:'16mb'}),(req,res)=>{store.saveMenu(req.body);notify();res.json({ok:true});});
  app.post('/api/expenses',admin,(req,res)=>{store.openCash();const description=String(req.body.description||'').trim().slice(0,200);if(!description) fail('Describe el gasto.');if(!['cash','qr'].includes(req.body.method)) fail('Medio de pago inválido.');store.run('INSERT INTO expenses(date,description,amount,method,created_at) VALUES (?,?,?,?,?)',store.today(),description,money(req.body.amount),req.body.method,store.stamp());notify();res.json({ok:true});});
  app.post('/api/cash/opening',admin,(req,res)=>{store.openCash();if(store.get('SELECT id FROM payments WHERE date=?',store.today())||store.get('SELECT id FROM expenses WHERE date=?',store.today())) fail('Registra el fondo inicial antes del primer movimiento.');const amount=Number(req.body.amount);if(!Number.isFinite(amount)||amount<0||amount>1000000) fail('Fondo inicial inválido.');store.run('UPDATE cash_days SET opening=? WHERE date=?',Math.round(amount*100),store.today());notify();res.json({ok:true});});
  app.post('/api/cash/close',admin,(req,res)=>{store.reconcile();const amount=Number(req.body.counted);if(!Number.isFinite(amount)||amount<0||amount>1000000) fail('Conteo inválido.');const day=store.get('SELECT * FROM cash_days WHERE date=?',store.today());if(day.counted!==null) fail('El arqueo ya está registrado.');store.run('UPDATE cash_days SET closed_at=COALESCE(closed_at,?),counted=?,note=? WHERE date=?',store.stamp(),Math.round(amount*100),String(req.body.note||'').slice(0,500),store.today());notify();res.json({ok:true});});

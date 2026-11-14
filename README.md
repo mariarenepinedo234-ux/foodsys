@@ -28,14 +28,14 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 ## Qué puedes probar
 
 1. Entra como administrador. Se crea un menú de ejemplo para la fecha de Bolivia del primer inicio: 50 sopas de maní, 35 milanesas de pollo, 25 asados, 60 refrescos, otras bebidas y extras. Son cantidades y precios editables, no ventas ficticias.
-2. En **Menú del día**, elige la fecha, define platos, precios y producción total. Publica el menú para habilitar las reservas públicas. Puedes preparar el menú de mañana. No se copia automáticamente el menú de ayer.
+2. En **Menú del día**, elige la fecha, define platos, precios y producción total. Publica el menú para habilitar las reservas públicas. Puedes preparar el menú de mañana. Cada producto permite cargar o quitar una foto JPEG, PNG o WebP (hasta 10 MB de entrada); el navegador la reduce antes de guardarla en SQLite. Las fotos también se muestran en el catálogo de venta y reservas. No se copia automáticamente el menú de ayer.
 3. En **Punto de venta**, agrega completos o platos sueltos. Un completo contiene una sopa, un segundo y una bebida a elección. Marca «Bebida incluida en completo» únicamente en las bebidas que correspondan (por ejemplo el refresco del día); las gaseosas y otras bebidas se pueden vender por separado. El precio del completo es independiente de la suma de precios individuales.
-4. Elige **Venta** para enviar el pedido inmediatamente a cocina, o **Reserva** para apartar porciones sin empezar a prepararlas. Puedes registrar las reservas recibidas por WhatsApp. No existe integración automática con WhatsApp.
+4. El nombre en caja es **Cliente sin nombre** por defecto y se puede editar; las reservas públicas siguen solicitando el nombre. Elige **Venta** para enviar el pedido inmediatamente a cocina, o **Reserva** para apartar porciones sin empezar a prepararlas. Puedes registrar las reservas recibidas por WhatsApp. No existe integración automática con WhatsApp.
 5. Registra el cobro en efectivo o por QR, o déjalo pendiente. Seleccionar QR significa que el cajero **ya verificó el abono en su banco**. No hay pasarela, cargo automático ni verificación bancaria.
 6. En **Pedidos y reservas**, cobra pendientes, envía reservas de hoy a cocina y anula reservas o pedidos sin pagar que todavía no estén en preparación.
 7. Abre **Cocina** en otro navegador/dispositivo con la cuenta de cocina. Activa los sonidos con el botón. Los pedidos avanzan: **En espera → Preparando → Listo → Entregado**. Para entregar debe estar registrado el pago.
 8. En **Caja y gastos**, registra el fondo inicial antes del primer movimiento; registra compras y otros gastos durante el día. Al terminar, cuenta el efectivo y registra el arqueo. Se muestra la diferencia entre el efectivo esperado y el contado.
-9. En **Reportes**, consulta el día, los últimos siete días, el mes o un rango personalizado. Los cobros se agrupan por fecha de pago y medio; los gastos se agrupan por fecha de registro.
+9. En **Reportes**, consulta el día, los últimos siete días, el mes o un rango personalizado. Los cobros en efectivo y QR aparecen en cuadros separados en Caja y gastos y en Reportes. Los cobros se agrupan por fecha de pago y medio; los gastos se agrupan por fecha de registro.
 10. En **Menú y QR**, comparte el enlace público o descarga la imagen PNG del QR de la página de reservas. Los comensales no necesitan cuenta. Una reserva confirmada ya aparta porciones y muestra su número para recogerla.
 
 ## Reglas de inventario y dinero

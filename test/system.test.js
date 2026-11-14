@@ -76,3 +76,39 @@ test('concurrent HTTP reservations cannot oversell the final portion',async()=>{
  try{const url=`http://127.0.0.1:${srv.address().port}/api/public/reservations`,body={date:isolated.today(),customer:'Prueba simultánea',phone:'70000000',lines:[{itemId:item.id,quantity:1}]};const responses=await Promise.all([1,2].map(()=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})));assert.deepEqual(responses.map(r=>r.status).sort(),[201,409]);assert.equal(isolated.get('SELECT used FROM items WHERE id=?',item.id).used,1);await Promise.all(responses.map(r=>r.json()));}
  finally{await new Promise(r=>srv.close(r));isolated.db.close();}
 });
+
+test('unnamed staff orders get the default without changing named or public orders',()=>{
+ const s=store();s.createOrder(combo(s,{customer:'  '}));s.createOrder(combo(s,{customer:' Beatriz '}));
+ assert.deepEqual(s.orders(s.today()).map(o=>o.customer),['Beatriz','Cliente sin nombre']);
+ assert.throws(()=>s.createOrder(combo(s,{customer:''}),'public'),/nombre/);s.db.close();
+});
+
+test('photos survive saving, omission and restart; migration preserves existing sales and stock',async()=>{
+ const {mkdtempSync,rmSync}=await import('node:fs');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const dir=mkdtempSync(join(tmpdir(),'foodsys-migration-')),path=join(dir,'legacy.sqlite');let s;
+ try{
+  s=createStore(path,{now:()=>new Date(fixed)});s.createOrder(combo(s,{payment:'qr'}));
+  const orders=s.orders(s.today()),menu=s.menu(s.today()),report=s.report(s.today(),s.today());
+  s.db.exec('ALTER TABLE items DROP COLUMN photo');s.db.close();
+  s=createStore(path,{now:()=>new Date(fixed)});
+  assert.deepEqual(s.orders(s.today()),orders);assert.deepEqual(s.menu(s.today()),menu);assert.deepEqual(s.report(s.today(),s.today()),report);
+  const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+  const body={date:s.today(),combo_price:25,published:true,items:menu.items.map(i=>({...i,price:i.price/100,photo}))};s.saveMenu(body);
+  body.items.forEach(i=>delete i.photo);s.saveMenu(body);assert.equal(s.menu(s.today()).items[0].photo,photo);
+  body.items[0].photo='data:image/svg+xml;base64,PHN2Zz4=';assert.throws(()=>s.saveMenu(body),/Foto inválida/);
+  s.db.close();s=createStore(path,{now:()=>new Date(fixed)});assert.equal(s.menu(s.today()).items[0].photo,photo);assert.deepEqual(s.orders(s.today()),orders);
+  body.items[0].photo='';s.saveMenu(body);assert.equal(s.menu(s.today()).items[0].photo,'');
+ }finally{s?.db.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('HTTP menu accepts photo payloads above the old 100 KB limit and exposes them publicly',async()=>{
+ const isolated=store(),app=createApp(isolated),srv=app.listen(0,'127.0.0.1');await new Promise(r=>srv.once('listening',r));
+ const url=`http://127.0.0.1:${srv.address().port}`;
+ try{
+  const login=await fetch(url+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'admin123'})});await login.json();
+  const photo='data:image/jpeg;base64,'+'A'.repeat(120000),menu=isolated.menu(isolated.today());
+  const res=await fetch(url+'/api/menu',{method:'POST',headers:{'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0]},body:JSON.stringify({date:isolated.today(),combo_price:25,published:true,items:menu.items.map((i,index)=>({...i,price:i.price/100,photo:index?'':photo}))})});
+  assert.equal(res.status,200);await res.json();const publicMenu=await fetch(url+'/api/public/menu?date='+isolated.today());assert.equal((await publicMenu.json()).menu.items[0].photo,photo);
+  const page=await fetch(url+'/');assert.equal(page.status,200);assert.match(await page.text(),/id="app"/);
+ }finally{await new Promise(r=>srv.close(r));isolated.db.close();}
+});
