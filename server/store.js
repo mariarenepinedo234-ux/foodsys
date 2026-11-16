@@ -1,3 +1,4 @@
+import { controlStore } from './control.js';
 import { inventoryStore } from './inventory.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
@@ -40,14 +41,16 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
   const stamp = () => now().toISOString();
   function reconcile() {
     const date=today();
-    run("UPDATE cash_days SET closed_at=COALESCE(closed_at, ?), note=CASE WHEN note='' THEN 'Cierre automático' ELSE note END WHERE date<?",stamp(),date);
-    run('INSERT OR IGNORE INTO cash_days(date,opened_at) VALUES (?,?)',date,stamp());
-    if(localHour(now())>=18) run("UPDATE cash_days SET closed_at=COALESCE(closed_at,?), note=CASE WHEN closed_at IS NULL AND note='' THEN 'Cierre automático a las 18:00' ELSE note END WHERE date=?",stamp(),date);
+    const pending=all('SELECT date FROM cash_days WHERE closed_at IS NULL AND (date<? OR (date=? AND ? >=18))',date,date,localHour(now()));
+    for(const day of pending){run("UPDATE cash_days SET closed_at=?,note=CASE WHEN note='' THEN 'Cierre automático' ELSE note END WHERE date=?",stamp(),day.date);control.audit('cash_auto_closed',day.date,null);}
+    const inserted=run('INSERT OR IGNORE INTO cash_days(date,opened_at) VALUES (?,?)',date,stamp());
+    if(inserted.changes){control.audit('cash_auto_opened',date,null);if(localHour(now())>=18){run("UPDATE cash_days SET closed_at=?,note='Cierre automático a las 18:00' WHERE date=?",stamp(),date);control.audit('cash_auto_closed',date,null);}}
     run('DELETE FROM sessions WHERE expires<?',Date.now());
   }
   function openCash() { reconcile(); const day=get('SELECT * FROM cash_days WHERE date=?',today()); if(day.closed_at) fail('La caja de hoy está cerrada. No se pueden registrar movimientos.',409); return day; }
+  const control=controlStore({db,all,get,run,transaction,today,stamp,openCash,reconcile,report,fail,hashPassword});
   if(seed) {
-    for(const [name,username,role] of [['María','admin','admin'],['Caja','cajero','cashier'],['Cocina','cocina','kitchen']]) {
+    if(!get('SELECT id FROM users LIMIT 1')) for(const [name,username,role] of [['María','admin','admin'],['Caja','cajero','cashier'],['Cocina','cocina','kitchen']]) {
       if(!get('SELECT id FROM users WHERE username=?',username)) run('INSERT INTO users(name,username,password,role) VALUES (?,?,?,?)',name,username,hashPassword(process.env[`${username.toUpperCase()}_PASSWORD`] || `${username}123`),role);
     }
     if(!get('SELECT date FROM days LIMIT 1')) {
@@ -147,5 +150,5 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     return {from,to,income,spent,balance:income-spent,cash,qr,revenue,expenses,count:revenue.reduce((s,r)=>s+r.count,0)};
   }
   function snapshot(date) {reconcile();return {today:today(),date,menu:menu(date),orders:orders(date),cash:get('SELECT * FROM cash_days WHERE date=?',today()),report:report(date,date)};}
-  return {db,all,get,run,transaction,today,stamp,reconcile,openCash,menu,orders,createOrder,pay,transition,saveMenu,report,snapshot,...inventory};
+  return {db,all,get,run,transaction,today,stamp,reconcile,openCash,menu,orders,createOrder,pay,transition,saveMenu,report,snapshot,...inventory,...control};
 }

@@ -13,7 +13,7 @@ export function createApp(store) {
  const auth=(...roles)=>(req,res,next)=>{try{
   store.reconcile();
   const token=(req.headers.cookie||'').split(';').map(s=>s.trim()).find(s=>s.startsWith('session='))?.slice(8);
-  const user=token && store.get('SELECT u.id,u.name,u.username,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?',token,Date.now());
+  const user=token && store.get('SELECT u.id,u.name,u.username,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.active=1 AND s.token=? AND s.expires>?',token,Date.now());
   if(!user) fail('Inicia sesión para continuar.',401);if(roles.length&&!roles.includes(user.role)) fail('No tienes permiso para esta acción.',403);req.user=user;next();
  }catch(e){next(e);}};
  const staff=auth('admin','cashier'), admin=auth('admin');
@@ -21,7 +21,7 @@ export function createApp(store) {
  app.post('/api/login',(req,res)=>{
   limited(`login:${req.ip}`);
   const user=store.get('SELECT * FROM users WHERE username=?',String(req.body.username||''));
-  if(!user||typeof req.body.password!=='string'||req.body.password.length>200||!checkPassword(req.body.password,user.password)) fail('Usuario o contraseña incorrectos.',401);
+  if(!user||!user.active||typeof req.body.password!=='string'||req.body.password.length>200||!checkPassword(req.body.password,user.password)) fail('Usuario o contraseña incorrectos.',401);
   const token=randomBytes(32).toString('hex');store.run('INSERT INTO sessions VALUES (?,?,?)',token,user.id,Date.now()+12*3600000);
   res.setHeader('Set-Cookie',`session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200${process.env.COOKIE_SECURE==='true'?'; Secure':''}`);
   res.json({id:user.id,name:user.name,role:user.role,username:user.username});
@@ -38,8 +38,11 @@ export function createApp(store) {
  app.post('/api/inventory/products',admin,express.json({limit:'256kb'}),(req,res)=>{const id=store.saveProduct(req.body);notify();res.json({id});});
  app.post('/api/inventory/movements',admin,(req,res)=>{store.movement(req.body,req.user.username);notify();res.json({ok:true});});
  app.post('/api/expenses',admin,(req,res)=>{store.openCash();const description=String(req.body.description||'').trim().slice(0,200);if(!description) fail('Describe el gasto.');if(!['cash','qr'].includes(req.body.method)) fail('Medio de pago inválido.');store.run('INSERT INTO expenses(date,description,amount,method,created_at) VALUES (?,?,?,?,?)',store.today(),description,money(req.body.amount),req.body.method,store.stamp());notify();res.json({ok:true});});
- app.post('/api/cash/opening',admin,(req,res)=>{store.openCash();if(store.get('SELECT id FROM payments WHERE date=?',store.today())||store.get('SELECT id FROM expenses WHERE date=?',store.today())) fail('Registra el fondo inicial antes del primer movimiento.');const amount=Number(req.body.amount);if(!Number.isFinite(amount)||amount<0||amount>1000000) fail('Fondo inicial inválido.');store.run('UPDATE cash_days SET opening=? WHERE date=?',Math.round(amount*100),store.today());notify();res.json({ok:true});});
- app.post('/api/cash/close',admin,(req,res)=>{store.reconcile();const amount=Number(req.body.counted);if(!Number.isFinite(amount)||amount<0||amount>1000000) fail('Conteo inválido.');const day=store.get('SELECT * FROM cash_days WHERE date=?',store.today());if(day.counted!==null) fail('El arqueo ya está registrado.');store.run('UPDATE cash_days SET closed_at=COALESCE(closed_at,?),counted=?,note=? WHERE date=?',store.stamp(),Math.round(amount*100),String(req.body.note||'').slice(0,500),store.today());notify();res.json({ok:true});});
+ app.get('/api/users',admin,(req,res)=>res.json({users:store.users(),history:store.userAudit()}));
+ app.post('/api/users',admin,(req,res)=>{const result=store.saveUser(req.body,req.user);notify();res.json(result);});
+ app.get('/api/cash',staff,(req,res)=>res.json({cash:store.get('SELECT * FROM cash_days WHERE date=?',store.today()),report:store.report(store.today(),store.today()),events:store.cashEvents(store.today()),...(req.user.role==='admin'?{history:store.cashHistory()}: {})}));
+ app.post('/api/cash/opening',staff,(req,res)=>{store.setOpening(req.body,req.user);notify();res.json({ok:true});});
+ app.post('/api/cash/close',staff,(req,res)=>{store.closeCash(req.body,req.user);notify();res.json({ok:true});});
  app.get('/api/reports',admin,(req,res)=>res.json(store.report(req.query.from,req.query.to)));
  app.get('/api/public/menu',(req,res)=>{const date=req.query.date||store.today();if(date<store.today()) fail('Consulta un menú de hoy o de una fecha futura.');res.json({today:store.today(),menu:store.menu(date,true)});});
  app.post('/api/public/reservations',(req,res)=>{limited(`reserve:${req.ip}`,20);if(!String(req.body.phone||'').trim()) fail('Escribe un teléfono de contacto.');const order=store.createOrder(req.body,'public');notify();res.status(201).json(order);});

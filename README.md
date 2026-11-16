@@ -19,8 +19,8 @@ Node.js es el único requisito: esta aplicación utiliza el módulo SQLite inclu
 
 | Perfil | Usuario | Contraseña inicial | Permisos |
 | --- | --- | --- | --- |
-| Administrador | `admin` | `admin123` | Menús, ventas, reservas, cocina, gastos, arqueo y reportes |
-| Cajero | `cajero` | `cajero123` | Ventas, reservas, cobros, disponibilidad y seguimiento de pedidos |
+| Administrador | `admin` | `admin123` | Menús, ventas, reservas, cocina, gastos, arqueo, reportes y usuarios |
+| Cajero | `cajero` | `cajero123` | Ventas, reservas, cobros, disponibilidad, seguimiento de pedidos, fondo inicial y cierre de caja |
 | Cocina | `cocina` | `cocina123` | Cola de preparación, marcar listo y entregar pedidos pagados |
 
 Son cuentas para probar localmente. Antes del **primer arranque** puedes definir `ADMIN_PASSWORD`, `CAJERO_PASSWORD` y `COCINA_PASSWORD` en el entorno del proceso para sustituir las contraseñas iniciales. Por ejemplo, en PowerShell, `$env:ADMIN_PASSWORD = 'una-contraseña-propia'`. Estas variables solo se aplican al crear cada usuario por primera vez; no modifican cuentas ya existentes. No se carga un archivo `.env` automáticamente.
@@ -37,6 +37,18 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 8. En **Caja y gastos**, registra el fondo inicial antes del primer movimiento; registra compras y otros gastos durante el día. Al terminar, cuenta el efectivo y registra el arqueo. Se muestra la diferencia entre el efectivo esperado y el contado.
 9. En **Reportes**, consulta el día, los últimos siete días, el mes o un rango personalizado. Los cobros en efectivo y QR aparecen en cuadros separados en Caja y gastos y en Reportes. Los cobros se agrupan por fecha de pago y medio; los gastos se agrupan por fecha de registro.
 10. En **Menú y QR**, comparte el enlace público o descarga la imagen PNG del QR de la página de reservas. Los comensales no necesitan cuenta. Una reserva confirmada ya aparta porciones y muestra su número para recogerla.
+
+## Usuarios y control de caja
+
+El administrador tiene una sección **Usuarios** para crear cuentas individuales, cambiar nombres y perfiles (administrador, cajero o cocina), establecer una nueva contraseña y activar o desactivar cuentas. Las contraseñas nuevas deben tener de 8 a 200 caracteres; nunca se muestran ni se devuelven sus hashes al navegador. En edición, dejar la contraseña vacía conserva la actual. Cambiar usuario de acceso, contraseña, perfil o estado cierra las sesiones de esa cuenta. Cambiar las credenciales de tu propia cuenta requiere volver a entrar.
+
+No se eliminan cuentas: se desactivan para conservar su historial. No puedes desactivar tu propia cuenta ni quitarte el perfil de administrador, y debe quedar al menos un administrador activo. La sección muestra los últimos 100 cambios de cuentas y quién los realizó; todos quedan guardados sin contraseñas en `audit_log`.
+
+**Administrador y cajero** pueden registrar el fondo inicial antes del primer movimiento, contar el efectivo y cerrar la caja desde **Caja y gastos**. Cocina no tiene esos permisos. Los gastos siguen siendo registrados por el administrador; el cajero puede ver los movimientos de la caja del día para cuadrarla, pero no puede consultar reportes históricos ni gestionar cuentas.
+
+Cada cambio del fondo y cada cierre o arqueo registra el usuario real de la sesión, su nombre, perfil y fecha/hora (se muestra en horario de Bolivia). Los cierres automáticos se identifican como **Sistema**. Si el sistema cerró a las 18:00, el cajero puede registrar después el conteo: se conserva la hora de cierre automático y se registra por separado el responsable del arqueo. No se permite modificar un arqueo ya guardado ni reabrir la caja.
+
+El administrador ve en Caja el historial de los últimos 60 días registrados, con efectivo esperado, contado, diferencia, observaciones y responsables. El cajero solo ve la caja actual. Las cajas anteriores a esta actualización mantienen sus datos y muestran que no tienen registro previo de responsables; no se atribuyen acciones pasadas a un usuario supuesto. La actualización agrega el estado activo a las cuentas existentes sin cambiar sus contraseñas ni borrar sesiones, ventas o inventario.
 
 ## Inventario permanente de bebidas
 
@@ -79,7 +91,7 @@ Conecta los dispositivos a la misma red Wi-Fi. `npm run dev` muestra la direcci�
 
 Los cambios se notifican con Server-Sent Events y se reconectan automáticamente. El sonido requiere interacción para habilitarse y que la pestaña permanezca abierta. Un teléfono suspendido puede dejar de recibir avisos: no se implementa Web Push ni notificaciones con la aplicación cerrada. Las reservas públicas refrescan la disponibilidad cada 30 segundos; el servidor siempre vuelve a validarla al confirmar.
 
-Para compartir reservas fuera de la red local necesitas desplegar el servidor con HTTPS y almacenamiento persistente. Esta primera versión está orientada a probar localmente; antes de publicarla falta completar administración de cuentas/recuperación de contraseña, operación y copias de respaldo, protección contra abuso de reservas y las necesidades legales/fiscales del negocio. El QR identifica la página de reservas, **no es un QR de pago bancario**.
+Para compartir reservas fuera de la red local necesitas desplegar el servidor con HTTPS y almacenamiento persistente. Esta primera versión está orientada a probar localmente; antes de publicarla falta completar recuperación de contraseña sin administrador, operación y copias de respaldo, protección contra abuso de reservas y las necesidades legales/fiscales del negocio. El QR identifica la página de reservas, **no es un QR de pago bancario**.
 
 ## Datos y copias de seguridad
 
@@ -114,6 +126,6 @@ server/index.js      Autenticación, permisos, API, eventos y servidor
 test/system.test.js  Pruebas de negocio y API (sin tocar los datos locales)
 ```
 
-Entidades: `users`, `sessions`, `days` (menús diarios), `items` (producción y porciones comprometidas), `orders`, `lines`, `allocations` (componentes consumidos), `products`, `product_allocations`, `inventory_movements`, `legacy_products`, `payments`, `cash_days` y `expenses`.
+Entidades: `audit_log`, `users`, `sessions`, `days` (menús diarios), `items` (producción y porciones comprometidas), `orders`, `lines`, `allocations` (componentes consumidos), `products`, `product_allocations`, `inventory_movements`, `legacy_products`, `payments`, `cash_days` y `expenses`.
 
-Siguientes mejoras posibles: turnos y horario configurables, gestión de usuarios, cambios de pedidos y devoluciones con auditoría, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, migrar a PostgreSQL sería un siguiente paso razonable; para un negocio y un servidor, SQLite evita instalaciones adicionales.
+Siguientes mejoras posibles: turnos y horario configurables, cambios de pedidos y devoluciones con auditoría, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, migrar a PostgreSQL sería un siguiente paso razonable; para un negocio y un servidor, SQLite evita instalaciones adicionales.

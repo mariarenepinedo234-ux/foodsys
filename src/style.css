@@ -17,3 +17,5 @@
 .inventory-forms{margin:24px 0}
 
 .beverage-photo{margin:18px 0}.beverage-photo .photo-preview{width:120px;height:100px}.beverage-photo input[type=file]{font-size:12px;padding:10px}
+
+.audit-title{margin-top:28px}.sidebar nav{overflow-y:auto;min-height:0}.sidebar-bottom{flex-shrink:0}
