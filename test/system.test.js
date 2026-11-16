@@ -38,7 +38,7 @@ test('daily reports separate cash and QR and subtract expenses in integer cents'
  const r=s.report(s.today(),s.today());assert.equal(r.income,5000);assert.equal(r.cash,2500);assert.equal(r.qr,2500);assert.equal(r.balance,4150);assert.equal(r.count,2);s.db.close();
 });
 test('menu edits cannot reduce reserved portions or remove historical items; previous order prices remain',()=>{
- const s=store();const o=s.createOrder(combo(s));const before=s.menu(s.today());const body={date:s.today(),combo_price:30,published:true,items:before.items.map(i=>({...i,price:i.price/100}))};body.items[0].stock=0;assert.throws(()=>s.saveMenu(body),/comprometidas/);assert.deepEqual(s.menu(s.today()),before);
+ const s=store();const o=s.createOrder(combo(s));const before=s.menu(s.today());const body={date:s.today(),combo_price:30,published:true,items:before.items.filter(i=>!i.productId).map(i=>({...i,price:i.price/100}))};body.items[0].stock=0;assert.throws(()=>s.saveMenu(body),/comprometidas/);assert.deepEqual(s.menu(s.today()),before);
  body.items[0].stock=50;s.saveMenu(body);assert.equal(s.orders(s.today()).find(i=>i.id===o.id).total,2500);s.db.close();
 });
 test('public reservation cannot mark itself paid or bypass publication and quantity validation',()=>{
@@ -69,7 +69,7 @@ test('HTTP cash workflow guards opening balance and stores reconciled closing',a
 });
 
 test('combo does not need a drink product and rejects a stale checkout price',()=>{
- const s=store();s.run("DELETE FROM items WHERE kind='drink'");
+ const s=store();s.run('UPDATE products SET active=0');
  const order=s.createOrder(combo(s));assert.equal(order.total,2500);assert.match(s.orders(s.today())[0].lines[0].label,/vaso de refresco incluido/);
  assert.throws(()=>s.createOrder(combo(s,{expectedTotal:1})),/precio del menú cambió/);assert.equal(s.all('SELECT * FROM orders').length,1);s.db.close();
 });
@@ -96,7 +96,7 @@ test('photos survive saving, omission and restart; migration preserves existing 
   s=createStore(path,{now:()=>new Date(fixed)});
   assert.deepEqual(s.orders(s.today()),orders);assert.deepEqual(s.menu(s.today()),menu);assert.deepEqual(s.report(s.today(),s.today()),report);
   const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
-  const body={date:s.today(),combo_price:25,published:true,items:menu.items.map(i=>({...i,price:i.price/100,photo}))};s.saveMenu(body);
+  const body={date:s.today(),combo_price:25,published:true,items:menu.items.filter(i=>!i.productId).map(i=>({...i,price:i.price/100,photo}))};s.saveMenu(body);
   body.items.forEach(i=>delete i.photo);s.saveMenu(body);assert.equal(s.menu(s.today()).items[0].photo,photo);
   body.items[0].photo='data:image/svg+xml;base64,PHN2Zz4=';assert.throws(()=>s.saveMenu(body),/Foto inválida/);
   s.db.close();s=createStore(path,{now:()=>new Date(fixed)});assert.equal(s.menu(s.today()).items[0].photo,photo);assert.deepEqual(s.orders(s.today()),orders);
@@ -110,7 +110,7 @@ test('HTTP menu accepts photo payloads above the old 100 KB limit and exposes th
  try{
   const login=await fetch(url+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'admin123'})});await login.json();
   const photo='data:image/jpeg;base64,'+'A'.repeat(120000),menu=isolated.menu(isolated.today());
-  const res=await fetch(url+'/api/menu',{method:'POST',headers:{'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0]},body:JSON.stringify({date:isolated.today(),combo_price:25,published:true,items:menu.items.map((i,index)=>({...i,price:i.price/100,photo:index?'':photo}))})});
+  const res=await fetch(url+'/api/menu',{method:'POST',headers:{'Content-Type':'application/json',Cookie:login.headers.get('set-cookie').split(';')[0]},body:JSON.stringify({date:isolated.today(),combo_price:25,published:true,items:menu.items.filter(i=>!i.productId).map((i,index)=>({...i,price:i.price/100,photo:index?'':photo}))})});
   assert.equal(res.status,200);await res.json();const publicMenu=await fetch(url+'/api/public/menu?date='+isolated.today());assert.equal((await publicMenu.json()).menu.items[0].photo,photo);
   const page=await fetch(url+'/');assert.equal(page.status,200);assert.match(await page.text(),/id="app"/);
  }finally{await new Promise(r=>srv.close(r));isolated.db.close();}
@@ -128,9 +128,9 @@ test('legacy refreshment stock and orders survive menu edits and restart; cancel
   s.db.close();s=createStore(path,{now:()=>new Date(fixed)});
   assert.deepEqual(s.orders(s.today()),orders);assert.ok(!s.menu(s.today()).items.some(i=>i.id===drinkId));
   assert.throws(()=>s.createOrder({date:s.today(),type:'reservation',lines:[{itemId:drinkId,quantity:1}]}),/solo se sirve incluido/);
-  const menu=s.menu(s.today());s.saveMenu({date:s.today(),combo_price:30,published:true,items:menu.items.map(i=>({...i,price:i.price/100}))});
+  const menu=s.menu(s.today());s.saveMenu({date:s.today(),combo_price:30,published:true,items:menu.items.filter(i=>!i.productId).map(i=>({...i,price:i.price/100}))});
   assert.deepEqual(s.get('SELECT * FROM items WHERE id=?',drinkId),legacy);assert.deepEqual(s.orders(s.today()),orders);
-  const soda=menu.items.find(i=>i.kind==='drink');const single=s.createOrder({date:s.today(),type:'reservation',lines:[{itemId:soda.id,quantity:1}]});assert.equal(single.total,soda.price);
+  const soda=menu.items.find(i=>i.kind==='drink');const single=s.createOrder({date:s.today(),type:'reservation',lines:[{kind:'product',productId:soda.productId,quantity:1}]});assert.equal(single.total,soda.price);
   s.transition(order.id,'cancelled','cashier');assert.equal(s.get('SELECT used FROM items WHERE id=?',drinkId).used,0);
  }finally{s?.db.close();rmSync(dir,{recursive:true,force:true});}
 });

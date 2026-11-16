@@ -38,6 +38,21 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 9. En **Reportes**, consulta el día, los últimos siete días, el mes o un rango personalizado. Los cobros en efectivo y QR aparecen en cuadros separados en Caja y gastos y en Reportes. Los cobros se agrupan por fecha de pago y medio; los gastos se agrupan por fecha de registro.
 10. En **Menú y QR**, comparte el enlace público o descarga la imagen PNG del QR de la página de reservas. Los comensales no necesitan cuenta. Una reserva confirmada ya aparta porciones y muestra su número para recogerla.
 
+## Inventario permanente de bebidas
+
+Entra como administrador a **Inventario de bebidas**. Registra cada bebida una sola vez con precio, existencias iniciales y stock mínimo. Aparece automáticamente en Punto de venta y en los menús publicados para reservas. Las bebidas ya no se crean ni se cuentan otra vez en Menú del día; sopas, segundos y extras conservan su producción diaria. El vaso de refresco sigue incluido en el completo y no pertenece a este inventario.
+
+- **Ejemplo:** carga 50 unidades, vende 8 y quedan 42 para el día siguiente. Recibe 24 y quedan 66.
+- **Mercadería recibida:** registra cantidad, fecha real de recepción, proveedor, costo total y observaciones. El saldo aumenta al recibirla, no al encargarla. No se implementa seguimiento de órdenes de compra pendientes.
+- **Caja:** si la compra se pagó hoy con caja abierta, puedes marcar «Registrar también el pago como gasto de caja» e indicar efectivo o QR. El gasto y la entrada se guardan juntos; no registres ese mismo pago nuevamente en Caja. Guardar un costo sin esa marca solo lo documenta en inventario.
+- **Ajustes:** registra una cantidad positiva o negativa y un motivo obligatorio para roturas o diferencias de conteo. No puede dejar saldo negativo. El saldo disponible ya excluye las reservas.
+- **Historial:** muestra las últimas 200 entradas, saldos iniciales/importados, ventas, reservas, anulaciones y ajustes; todos los movimientos quedan guardados en SQLite. Las entradas manuales registran el usuario.
+- **Edición:** permite cambiar precio, mínimo o nombre y retirar una bebida de venta sin borrar su historial. Los pedidos anteriores conservan el precio y nombre originales.
+
+Al actualizar una base existente, las bebidas del menú se importan una sola vez, agrupadas por nombre (sin distinguir mayúsculas ni espacios al inicio/final). Se usa el saldo disponible del menú más reciente hasta hoy; si solo existen menús futuros, se usa el más reciente de ellos. **No se suman los conteos diarios repetidos. Verifica una vez el conteo físico y registra un ajuste si hace falta**, especialmente si las bebidas se registraron con nombres diferentes o quedaron reservas antiguas de varios días. Los platos, pagos y pedidos existentes se conservan; anular una reserva antigua también libera sus bebidas. Las fotos anteriores de las bebidas se conservan.
+
+Para actualizar, detén el servidor, respalda la carpeta `data`, reemplaza los archivos de código conservando `data`, ejecuta `npm ci`, `npm run build` y `npm start`. La migración es automática al arrancar. Las pruebas usan bases aisladas y no modifican tu base local.
+
 ## Reglas de inventario y dinero
 
 - Registrar un pedido compromete las porciones en una transacción SQLite. Un completo descuenta una sopa y el segundo elegido. El vaso de refresco está incluido en el precio, sin stock ni precio independientes. Cada segundo tiene su disponibilidad independiente.
@@ -99,6 +114,6 @@ server/index.js      Autenticación, permisos, API, eventos y servidor
 test/system.test.js  Pruebas de negocio y API (sin tocar los datos locales)
 ```
 
-Entidades: `users`, `sessions`, `days` (menús diarios), `items` (producción y porciones comprometidas), `orders`, `lines`, `allocations` (componentes consumidos), `payments`, `cash_days` y `expenses`.
+Entidades: `users`, `sessions`, `days` (menús diarios), `items` (producción y porciones comprometidas), `orders`, `lines`, `allocations` (componentes consumidos), `products`, `product_allocations`, `inventory_movements`, `legacy_products`, `payments`, `cash_days` y `expenses`.
 
 Siguientes mejoras posibles: turnos y horario configurables, gestión de usuarios, cambios de pedidos y devoluciones con auditoría, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, migrar a PostgreSQL sería un siguiente paso razonable; para un negocio y un servidor, SQLite evita instalaciones adicionales.

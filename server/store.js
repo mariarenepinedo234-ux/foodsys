@@ -1,3 +1,4 @@
+import { inventoryStore } from './inventory.js';
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
@@ -54,8 +55,9 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
       for(const [name,kind,price,stock] of [['Sopa de maní','soup',1000,50],['Milanesa de pollo','main',1800,35],['Asado a la olla','main',1800,25],['Coca-Cola personal','drink',700,20],['Porción de arroz','extra',500,20]]) run('INSERT INTO items(date,name,kind,price,stock,combo_eligible) VALUES (?,?,?,?,?,?)',today(),name,kind,price,stock,0);
     }
   }
+  const inventory=inventoryStore({db,all,get,run,transaction,today,stamp,openCash,fail,money,validDate});
   reconcile();
-  function menu(date, publicOnly=false) { validDate(date); const day=get('SELECT * FROM days WHERE date=?',date); return day && (!publicOnly || day.published) ? {...day,items:all('SELECT *,stock-used AS available FROM items WHERE date=? AND combo_eligible=0 ORDER BY id',date)} : {date,combo_price:2500,published:0,items:[]}; }
+  function menu(date, publicOnly=false) { validDate(date); const day=get('SELECT * FROM days WHERE date=?',date); return day && (!publicOnly || day.published) ? {...day,items:[...all("SELECT *,stock-used AS available FROM items WHERE date=? AND combo_eligible=0 AND kind<>'drink' ORDER BY id",date),...inventory.catalog()]} : {date,combo_price:2500,published:0,items:[]}; }
   function orders(date) { return all(`SELECT o.*,p.method,p.amount AS paid FROM orders o LEFT JOIN payments p ON p.order_id=o.id WHERE o.date=? ORDER BY o.id DESC`,date).map(o=>({...o,lines:all('SELECT * FROM lines WHERE order_id=?',o.id)})); }
   function createOrder(body, source='staff') { return transaction(()=>{
     const date=validDate(body.date);
@@ -68,20 +70,27 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     const customer=String(body.customer||'').trim().slice(0,100) || (source==='staff'?'Cliente sin nombre':'');
     if(!customer) fail('Escribe el nombre del comensal.');
     if(!Array.isArray(body.lines) || body.lines.length<1 || body.lines.length>30) fail('Agrega al menos un plato.');
-    const allocations=new Map(), lines=[]; let total=0;
+    const allocations=new Map(), products=new Map(), lines=[]; let total=0;
     const allocate=(id,quantity,kind)=>{ const item=get('SELECT * FROM items WHERE id=? AND date=?',Number(id)||0,date); if(!item || (kind && item.kind!==kind)) fail('El plato elegido no está en este menú.'); allocations.set(item.id,(allocations.get(item.id)||0)+quantity); return item; };
     for(const line of body.lines) {
       const q=Number(line.quantity); if(!Number.isInteger(q)||q<1||q>100) fail('Cantidad inválida.');
       let price,label;
-      if(line.kind==='combo') { const soup=allocate(line.soupId,q,'soup'), main=allocate(line.mainId,q,'main'); price=day.combo_price; label=`Completo · ${soup.name} + ${main.name} + vaso de refresco incluido`; }
-      else { const item=allocate(line.itemId,q); if(item.combo_eligible) fail('El refresco solo se sirve incluido en el completo.'); price=item.price;label=item.name; }
+      if(line.kind==='product') {
+        const product=get('SELECT * FROM products WHERE id=? AND active=1',Number(line.productId)||0);if(!product)fail('Bebida no disponible.');
+        products.set(product.id,(products.get(product.id)||0)+q);price=product.price;label=product.name;
+      }
+      else if(line.kind==='combo') { const soup=allocate(line.soupId,q,'soup'), main=allocate(line.mainId,q,'main'); price=day.combo_price; label=`Completo · ${soup.name} + ${main.name} + vaso de refresco incluido`; }
+      else { const item=allocate(line.itemId,q); if(item.kind==='drink'&&!item.combo_eligible)fail('Selecciona la bebida desde el inventario actualizado.');
+      if(item.combo_eligible) fail('El refresco solo se sirve incluido en el completo.'); price=item.price;label=item.name; }
       lines.push({label,quantity:q,price});total+=price*q;
     }
     for(const [id,q] of allocations) { const item=get('SELECT * FROM items WHERE id=?',id); if(item.stock-item.used<q) fail(`No alcanza ${item.name}. Quedan ${item.stock-item.used} porciones.`,409); }
+    for(const [id,q] of products){const p=get('SELECT * FROM products WHERE id=?',id);if(p.stock<q)fail(`No alcanza ${p.name}. Quedan ${p.stock} unidades.`,409);}
     if(body.expectedTotal !== undefined && body.expectedTotal !== total) fail('El precio del menú cambió. Actualiza la página y revisa tu pedido antes de confirmarlo.',409);
     const id=Number(run('INSERT INTO orders(date,customer,phone,note,type,source,status,total,created_at) VALUES (?,?,?,?,?,?,?,?,?)',date,customer,String(body.phone||'').slice(0,30),String(body.note||'').slice(0,500),reservation?'reservation':'sale',source,reservation?'reserved':'queued',total,stamp()).lastInsertRowid);
     for(const l of lines) run('INSERT INTO lines(order_id,label,quantity,price) VALUES (?,?,?,?)',id,l.label,l.quantity,l.price);
     for(const [itemId,q] of allocations) {run('INSERT INTO allocations VALUES (?,?,?)',id,itemId,q);run('UPDATE items SET used=used+? WHERE id=?',q,itemId);}
+    for(const [productId,q] of products){run('INSERT INTO product_allocations VALUES (?,?,?)',id,productId,q);inventory.changeStock(productId,-q,'order',id);}
     if(source==='staff' && body.payment) pay(id,body.payment);
     return {id,total,status:reservation?'reserved':'queued'};
   }); }
@@ -101,6 +110,8 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     if(status==='delivered' && !get('SELECT id FROM payments WHERE order_id=?',id)) fail('Caja debe registrar el pago antes de entregar.');
     if(status==='cancelled') {
       if(get('SELECT id FROM payments WHERE order_id=?',id)) fail('Un pedido pagado requiere gestionar su devolución. Esta versión no permite anularlo.');
+      for(const a of all('SELECT * FROM product_allocations WHERE order_id=?',id))inventory.changeStock(a.product_id,a.quantity,'cancellation',id);
+      for(const a of all('SELECT a.quantity,l.product_id FROM allocations a JOIN legacy_products l ON l.item_id=a.item_id WHERE a.order_id=?',id))inventory.changeStock(a.product_id,a.quantity,'cancellation',id);
       for(const a of all('SELECT * FROM allocations WHERE order_id=?',id)) run('UPDATE items SET used=used-? WHERE id=?',a.quantity,a.item_id);
     }
     run('UPDATE orders SET status=? WHERE id=?',status,id);
@@ -113,10 +124,11 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     const keep=[];
     for(const item of body.items) {
       // Preserve legacy refreshments and their historical allocations unchanged.
-      if(item.id && get('SELECT id FROM items WHERE id=? AND date=? AND combo_eligible=1',Number(item.id),date)) continue;
+      if(item.id && get("SELECT id FROM items WHERE id=? AND date=? AND (combo_eligible=1 OR kind='drink')",Number(item.id),date)) continue;
+      if(item.kind==='drink')fail('Registra las bebidas en Inventario de bebidas.');
       if(item.combo_eligible) fail('El vaso de refresco ya viene incluido en el completo; no se registra como producto.');
       const name=String(item.name||'').trim().slice(0,100), stock=Number(item.stock);
-      if(!name||!['soup','main','drink','extra'].includes(item.kind)||!Number.isInteger(stock)||stock<0||stock>10000) fail('Revisa nombre, categoría y cantidad de cada plato.');
+      if(!name||!['soup','main','extra'].includes(item.kind)||!Number.isInteger(stock)||stock<0||stock>10000) fail('Revisa nombre, categoría y cantidad de cada plato.');
       const price=money(item.price);
       if(item.photo!==undefined && (typeof item.photo!=='string' || item.photo.length>200000 || (item.photo && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(item.photo)))) fail('Foto inválida. Usa una imagen JPEG, PNG o WebP de hasta 150 KB.');
       if(item.id) {const old=get('SELECT * FROM items WHERE id=? AND date=?',Number(item.id),date);if(!old) fail('Plato inválido.');if(stock<old.used) fail(`${name}: ya hay ${old.used} porciones comprometidas.`); if(old.used && old.kind!==item.kind) fail('No puedes cambiar la categoría de un plato comprometido.');run('UPDATE items SET name=?,kind=?,price=?,stock=? WHERE id=?',name,item.kind,price,stock,old.id);keep.push(old.id);}
@@ -124,7 +136,7 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
       if(item.photo!==undefined) run('UPDATE items SET photo=? WHERE id=?',item.photo,keep[keep.length-1]);
       run('UPDATE items SET combo_eligible=? WHERE id=?',item.kind==='drink'&&item.combo_eligible?1:0,keep[keep.length-1]);
     }
-    for(const old of all('SELECT * FROM items WHERE date=?',date)) if(!old.combo_eligible && !keep.includes(old.id)) {if(old.used || get('SELECT order_id FROM allocations WHERE item_id=?',old.id)) fail('No puedes eliminar un plato con historial de pedidos. Puedes dejar su cantidad igual a las porciones comprometidas.');run('DELETE FROM items WHERE id=?',old.id);}
+    for(const old of all('SELECT * FROM items WHERE date=?',date)) if(old.kind!=='drink' && !old.combo_eligible && !keep.includes(old.id)) {if(old.used || get('SELECT order_id FROM allocations WHERE item_id=?',old.id)) fail('No puedes eliminar un plato con historial de pedidos. Puedes dejar su cantidad igual a las porciones comprometidas.');run('DELETE FROM items WHERE id=?',old.id);}
   });}
   function report(from,to) {
     validDate(from);validDate(to);if(from>to) fail('El rango de fechas no es válido.');
@@ -135,5 +147,5 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     return {from,to,income,spent,balance:income-spent,cash,qr,revenue,expenses,count:revenue.reduce((s,r)=>s+r.count,0)};
   }
   function snapshot(date) {reconcile();return {today:today(),date,menu:menu(date),orders:orders(date),cash:get('SELECT * FROM cash_days WHERE date=?',today()),report:report(date,date)};}
-  return {db,all,get,run,transaction,today,stamp,reconcile,openCash,menu,orders,createOrder,pay,transition,saveMenu,report,snapshot};
+  return {db,all,get,run,transaction,today,stamp,reconcile,openCash,menu,orders,createOrder,pay,transition,saveMenu,report,snapshot,...inventory};
 }
