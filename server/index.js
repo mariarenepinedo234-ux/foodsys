@@ -7,7 +7,7 @@ import { createStore, checkPassword, fail, money } from './store.js';
 export function createApp(store) {
  const app=express(), clients=new Set(), attempts=new Map();
  app.disable('x-powered-by');
- app.use((req,res,next)=>req.path==='/api/menu'?next():express.json({limit:'100kb'})(req,res,next));
+ app.use((req,res,next)=>['/api/menu','/api/inventory/products'].includes(req.path)?next():express.json({limit:'100kb'})(req,res,next));
  app.use((req,res,next)=>{res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');next();});
  const notify=()=>{for(const res of clients) res.write('data: update\n\n');};
  const auth=(...roles)=>(req,res,next)=>{try{
@@ -35,7 +35,7 @@ export function createApp(store) {
  app.post('/api/orders/:id/status',auth(),(req,res)=>{store.transition(Number(req.params.id),req.body.status,req.user.role);notify();res.json({ok:true});});
  app.post('/api/menu',admin,express.json({limit:'16mb'}),(req,res)=>{store.saveMenu(req.body);notify();res.json({ok:true});});
  app.get('/api/inventory',admin,(req,res)=>res.json(store.inventory()));
- app.post('/api/inventory/products',admin,(req,res)=>{const id=store.saveProduct(req.body);notify();res.json({id});});
+ app.post('/api/inventory/products',admin,express.json({limit:'256kb'}),(req,res)=>{const id=store.saveProduct(req.body);notify();res.json({id});});
  app.post('/api/inventory/movements',admin,(req,res)=>{store.movement(req.body,req.user.username);notify();res.json({ok:true});});
  app.post('/api/expenses',admin,(req,res)=>{store.openCash();const description=String(req.body.description||'').trim().slice(0,200);if(!description) fail('Describe el gasto.');if(!['cash','qr'].includes(req.body.method)) fail('Medio de pago inválido.');store.run('INSERT INTO expenses(date,description,amount,method,created_at) VALUES (?,?,?,?,?)',store.today(),description,money(req.body.amount),req.body.method,store.stamp());notify();res.json({ok:true});});
  app.post('/api/cash/opening',admin,(req,res)=>{store.openCash();if(store.get('SELECT id FROM payments WHERE date=?',store.today())||store.get('SELECT id FROM expenses WHERE date=?',store.today())) fail('Registra el fondo inicial antes del primer movimiento.');const amount=Number(req.body.amount);if(!Number.isFinite(amount)||amount<0||amount>1000000) fail('Fondo inicial inválido.');store.run('UPDATE cash_days SET opening=? WHERE date=?',Math.round(amount*100),store.today());notify();res.json({ok:true});});

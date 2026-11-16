@@ -89,3 +89,36 @@ test('HTTP inventory permissions, shared public stock and concurrent reservation
   assert.equal((await request('/inventory/movements',{productId:id,type:'receipt',quantity:24,date:s.today()},cashier.cookie)).status,403);
  }finally{app.locals.stop();await new Promise(r=>server.close(r));s.db.close();}
 });
+
+test('optional beverage photos persist, can be omitted or removed, and do not change stock or sales',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'foodsys-beverage-photo-')),path=join(dir,'photos.sqlite');let s;
+ const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+ try{
+  s=createStore(path,{now:()=>new Date(fixed)});
+  const id=s.saveProduct({name:'Agua sin foto',price:5,stock:50,minimum:5});assert.equal(s.inventory().products.find(p=>p.id===id).photo,'');
+  const withPhoto=s.saveProduct({name:'Agua con foto',price:7,stock:10,minimum:2,photo});assert.equal(s.menu(s.today()).items.find(p=>p.productId===withPhoto).photo,photo);
+  order(s,id,8);const orders=s.orders(s.today()),movements=s.inventory().movements;
+  s.saveProduct({id,name:'Agua sin foto',price:5,minimum:5,photo});
+  s.saveProduct({id,name:'Agua sin foto',price:5,minimum:5});assert.equal(s.inventory().products.find(p=>p.id===id).photo,photo);
+  for(const bad of ['https://example.com/foto.png','data:image/svg+xml;base64,AAAA','data:image/png;base64,%%%%',null,42,'data:image/png;base64,'+'A'.repeat(200000)]){
+   assert.throws(()=>s.saveProduct({id,name:'No guardar',price:1,minimum:0,photo:bad}),/Foto inválida/);
+  }
+  const p=s.inventory().products.find(p=>p.id===id);assert.equal(p.name,'Agua sin foto');assert.equal(p.stock,42);assert.equal(p.price,500);
+  assert.deepEqual(s.orders(s.today()),orders);assert.deepEqual(s.inventory().movements,movements);
+  s.db.close();s=createStore(path,{now:()=>new Date(fixed)});assert.equal(s.menu(s.today()).items.find(p=>p.productId===id).photo,photo);
+  s.saveProduct({id,name:'Agua sin foto',price:5,minimum:5,photo:''});assert.equal(s.menu(s.today()).items.find(p=>p.productId===id).photo,'');assert.equal(s.inventory().products.find(p=>p.id===id).stock,42);
+ }finally{s?.db.close();rmSync(dir,{force:true,recursive:true});}
+});
+
+test('HTTP beverage photo payloads above 100 KB are accepted only for admin and reach the catalog',async()=>{
+ const s=setup(),app=createApp(s),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base=`http://127.0.0.1:${server.address().port}/api`;
+ async function post(path,body,cookie){const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:JSON.stringify(body)});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};}
+ try{
+  const admin=await post('/login',{username:'admin',password:'admin123'}),cashier=await post('/login',{username:'cajero',password:'cajero123'});
+  const photo='data:image/jpeg;base64,'+'A'.repeat(120000),body={name:'Foto grande',price:5,stock:50,minimum:5,photo};
+  assert.equal((await post('/inventory/products',body,cashier.cookie)).status,403);
+  const result=await post('/inventory/products',body,admin.cookie);assert.equal(result.status,200);
+  const menu=await (await fetch(base+'/public/menu')).json();assert.equal(menu.menu.items.find(p=>p.productId===result.data.id).photo,photo);
+  const removed=await post('/inventory/products',{...body,id:result.data.id,photo:''},admin.cookie);assert.equal(removed.status,200);assert.equal(s.inventory().products.find(p=>p.id===result.data.id).photo,'');
+ }finally{app.locals.stop();await new Promise(r=>server.close(r));s.db.close();}
+});

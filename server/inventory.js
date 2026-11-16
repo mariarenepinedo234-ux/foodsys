@@ -21,11 +21,13 @@ export function inventoryStore({db,all,get,run,transaction,today,stamp,openCash,
  });
  const integer=(value,min=0)=>{const n=Number(value);if(!Number.isSafeInteger(n)||n<min||n>1000000)fail('Cantidad inválida.');return n;};
  function saveProduct(body) {return transaction(()=>{
+  if(body.photo!==undefined && (typeof body.photo!=='string' || body.photo.length>200000 || (body.photo && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(body.photo)))) fail('Foto inválida. Usa una imagen JPEG, PNG o WebP de hasta 150 KB.');
   const name=String(body.name||'').trim().slice(0,100);if(!name)fail('Escribe el nombre de la bebida.');
   const price=money(body.price),minimum=integer(body.minimum),active=body.active===false?0:1;
   const duplicate=get('SELECT id FROM products WHERE lower(trim(name))=lower(?) AND id<>?',name,Number(body.id)||0);if(duplicate)fail('Ya existe una bebida con ese nombre.');
-  if(body.id){if(!get('SELECT id FROM products WHERE id=?',Number(body.id)))fail('Bebida no encontrada.',404);run('UPDATE products SET name=?,price=?,minimum=?,active=? WHERE id=?',name,price,minimum,active,Number(body.id));return Number(body.id);}
+  if(body.id){if(!get('SELECT id FROM products WHERE id=?',Number(body.id)))fail('Bebida no encontrada.',404);run('UPDATE products SET name=?,price=?,minimum=?,active=? WHERE id=?',name,price,minimum,active,Number(body.id));if(body.photo!==undefined)run('UPDATE products SET photo=? WHERE id=?',body.photo,Number(body.id));return Number(body.id);}
   const id=Number(run('INSERT INTO products(name,price,minimum) VALUES (?,?,?)',name,price,minimum).lastInsertRowid);
+  if(body.photo!==undefined)run('UPDATE products SET photo=? WHERE id=?',body.photo,id);
   const stock=integer(body.stock||0);if(stock)changeStock(id,stock,'opening',null);return id;
  });}
  function movement(body,actor='') {return transaction(()=>{

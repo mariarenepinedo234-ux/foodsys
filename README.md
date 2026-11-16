@@ -40,7 +40,7 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 
 ## Inventario permanente de bebidas
 
-Entra como administrador a **Inventario de bebidas**. Registra cada bebida una sola vez con precio, existencias iniciales y stock mínimo. Aparece automáticamente en Punto de venta y en los menús publicados para reservas. Las bebidas ya no se crean ni se cuentan otra vez en Menú del día; sopas, segundos y extras conservan su producción diaria. El vaso de refresco sigue incluido en el completo y no pertenece a este inventario.
+Entra como administrador a **Inventario de bebidas**. Registra cada bebida una sola vez con precio, existencias iniciales y stock mínimo. Puedes agregar una foto opcional al crearla o editarla (JPEG, PNG o WebP de hasta 10 MB; se reduce antes de guardarse). La foto aparece en Punto de venta y en reservas; puedes reemplazarla o quitarla y guardar también sin foto. Aparece automáticamente en Punto de venta y en los menús publicados para reservas. Las bebidas ya no se crean ni se cuentan otra vez en Menú del día; sopas, segundos y extras conservan su producción diaria. El vaso de refresco sigue incluido en el completo y no pertenece a este inventario.
 
 - **Ejemplo:** carga 50 unidades, vende 8 y quedan 42 para el día siguiente. Recibe 24 y quedan 66.
 - **Mercadería recibida:** registra cantidad, fecha real de recepción, proveedor, costo total y observaciones. El saldo aumenta al recibirla, no al encargarla. No se implementa seguimiento de órdenes de compra pendientes.
