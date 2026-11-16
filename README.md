@@ -27,9 +27,9 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 
 ## Qué puedes probar
 
-1. Entra como administrador. Se crea un menú de ejemplo para la fecha de Bolivia del primer inicio: 50 sopas de maní, 35 milanesas de pollo, 25 asados, 60 refrescos, otras bebidas y extras. Son cantidades y precios editables, no ventas ficticias.
+1. Entra como administrador. Se crea un menú de ejemplo para la fecha de Bolivia del primer inicio: 50 sopas de maní, 35 milanesas de pollo, 25 asados, gaseosas y extras. Son cantidades y precios editables, no ventas ficticias.
 2. En **Menú del día**, elige la fecha, define platos, precios y producción total. Publica el menú para habilitar las reservas públicas. Puedes preparar el menú de mañana. Cada producto permite cargar o quitar una foto JPEG, PNG o WebP (hasta 10 MB de entrada); el navegador la reduce antes de guardarla en SQLite. Las fotos también se muestran en el catálogo de venta y reservas. No se copia automáticamente el menú de ayer.
-3. En **Punto de venta**, agrega completos o platos sueltos. Un completo contiene una sopa, un segundo y una bebida a elección. Marca «Bebida incluida en completo» únicamente en las bebidas que correspondan (por ejemplo el refresco del día); las gaseosas y otras bebidas se pueden vender por separado. El precio del completo es independiente de la suma de precios individuales.
+3. En **Punto de venta**, agrega completos o platos sueltos. Un completo contiene una sopa y un segundo a elección, más un vaso de refresco incluido automáticamente. No se elige, no se registra como producto ni se vende suelto. Las gaseosas y otras bebidas se pueden vender por separado. El precio del completo es independiente de la suma de precios individuales.
 4. El nombre en caja es **Cliente sin nombre** por defecto y se puede editar; las reservas públicas siguen solicitando el nombre. Elige **Venta** para enviar el pedido inmediatamente a cocina, o **Reserva** para apartar porciones sin empezar a prepararlas. Puedes registrar las reservas recibidas por WhatsApp. No existe integración automática con WhatsApp.
 5. Registra el cobro en efectivo o por QR, o déjalo pendiente. Seleccionar QR significa que el cajero **ya verificó el abono en su banco**. No hay pasarela, cargo automático ni verificación bancaria.
 6. En **Pedidos y reservas**, cobra pendientes, envía reservas de hoy a cocina y anula reservas o pedidos sin pagar que todavía no estén en preparación.
@@ -40,7 +40,8 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 
 ## Reglas de inventario y dinero
 
-- Registrar un pedido compromete las porciones en una transacción SQLite. Un completo descuenta una sopa, el segundo elegido y la bebida elegida. Cada segundo tiene su disponibilidad independiente.
+- Registrar un pedido compromete las porciones en una transacción SQLite. Un completo descuenta una sopa y el segundo elegido. El vaso de refresco está incluido en el precio, sin stock ni precio independientes. Cada segundo tiene su disponibilidad independiente.
+- Los refrescos marcados anteriormente como incluidos se conservan internamente con sus registros históricos, pero se ocultan del menú editable y del catálogo. Los pedidos antiguos conservan precios, detalle y asignaciones; su anulación sigue liberando las porciones originales.
 - Una reserva ya cuenta contra el stock. Cobrarla o pasarla a cocina **no descuenta de nuevo**.
 - Los platos sueltos y los extras descuentan solo su producto. Las cantidades y los precios se validan en el servidor, no se confía en los importes del navegador.
 - Si no alcanza alguna porción, se rechaza el pedido entero: no se guarda una venta a medias. Los precios de pedidos existentes no cambian cuando se edita el menú.

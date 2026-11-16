@@ -51,11 +51,11 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     }
     if(!get('SELECT date FROM days LIMIT 1')) {
       run('INSERT INTO days(date,combo_price,published) VALUES (?,?,1)',today(),2500);
-      for(const [name,kind,price,stock] of [['Sopa de maní','soup',1000,50],['Milanesa de pollo','main',1800,35],['Asado a la olla','main',1800,25],['Refresco del día','drink',300,60],['Coca-Cola personal','drink',700,20],['Porción de arroz','extra',500,20]]) run('INSERT INTO items(date,name,kind,price,stock,combo_eligible) VALUES (?,?,?,?,?,?)',today(),name,kind,price,stock,name==='Refresco del día'?1:0);
+      for(const [name,kind,price,stock] of [['Sopa de maní','soup',1000,50],['Milanesa de pollo','main',1800,35],['Asado a la olla','main',1800,25],['Coca-Cola personal','drink',700,20],['Porción de arroz','extra',500,20]]) run('INSERT INTO items(date,name,kind,price,stock,combo_eligible) VALUES (?,?,?,?,?,?)',today(),name,kind,price,stock,0);
     }
   }
   reconcile();
-  function menu(date, publicOnly=false) { validDate(date); const day=get('SELECT * FROM days WHERE date=?',date); return day && (!publicOnly || day.published) ? {...day,items:all('SELECT *,stock-used AS available FROM items WHERE date=? ORDER BY id',date)} : {date,combo_price:2500,published:0,items:[]}; }
+  function menu(date, publicOnly=false) { validDate(date); const day=get('SELECT * FROM days WHERE date=?',date); return day && (!publicOnly || day.published) ? {...day,items:all('SELECT *,stock-used AS available FROM items WHERE date=? AND combo_eligible=0 ORDER BY id',date)} : {date,combo_price:2500,published:0,items:[]}; }
   function orders(date) { return all(`SELECT o.*,p.method,p.amount AS paid FROM orders o LEFT JOIN payments p ON p.order_id=o.id WHERE o.date=? ORDER BY o.id DESC`,date).map(o=>({...o,lines:all('SELECT * FROM lines WHERE order_id=?',o.id)})); }
   function createOrder(body, source='staff') { return transaction(()=>{
     const date=validDate(body.date);
@@ -73,8 +73,8 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     for(const line of body.lines) {
       const q=Number(line.quantity); if(!Number.isInteger(q)||q<1||q>100) fail('Cantidad inválida.');
       let price,label;
-      if(line.kind==='combo') { const soup=allocate(line.soupId,q,'soup'), main=allocate(line.mainId,q,'main'), drink=allocate(line.drinkId,q,'drink'); if(!drink.combo_eligible) fail('Esta bebida no está incluida en el completo.'); price=day.combo_price; label=`Completo · ${soup.name} + ${main.name} + ${drink.name}`; }
-      else { const item=allocate(line.itemId,q); price=item.price;label=item.name; }
+      if(line.kind==='combo') { const soup=allocate(line.soupId,q,'soup'), main=allocate(line.mainId,q,'main'); price=day.combo_price; label=`Completo · ${soup.name} + ${main.name} + vaso de refresco incluido`; }
+      else { const item=allocate(line.itemId,q); if(item.combo_eligible) fail('El refresco solo se sirve incluido en el completo.'); price=item.price;label=item.name; }
       lines.push({label,quantity:q,price});total+=price*q;
     }
     for(const [id,q] of allocations) { const item=get('SELECT * FROM items WHERE id=?',id); if(item.stock-item.used<q) fail(`No alcanza ${item.name}. Quedan ${item.stock-item.used} porciones.`,409); }
@@ -112,6 +112,9 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     if(!Array.isArray(body.items)||body.items.length>80) fail('Menú inválido.');
     const keep=[];
     for(const item of body.items) {
+      // Preserve legacy refreshments and their historical allocations unchanged.
+      if(item.id && get('SELECT id FROM items WHERE id=? AND date=? AND combo_eligible=1',Number(item.id),date)) continue;
+      if(item.combo_eligible) fail('El vaso de refresco ya viene incluido en el completo; no se registra como producto.');
       const name=String(item.name||'').trim().slice(0,100), stock=Number(item.stock);
       if(!name||!['soup','main','drink','extra'].includes(item.kind)||!Number.isInteger(stock)||stock<0||stock>10000) fail('Revisa nombre, categoría y cantidad de cada plato.');
       const price=money(item.price);
@@ -121,7 +124,7 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
       if(item.photo!==undefined) run('UPDATE items SET photo=? WHERE id=?',item.photo,keep[keep.length-1]);
       run('UPDATE items SET combo_eligible=? WHERE id=?',item.kind==='drink'&&item.combo_eligible?1:0,keep[keep.length-1]);
     }
-    for(const old of all('SELECT * FROM items WHERE date=?',date)) if(!keep.includes(old.id)) {if(old.used || get('SELECT order_id FROM allocations WHERE item_id=?',old.id)) fail('No puedes eliminar un plato con historial de pedidos. Puedes dejar su cantidad igual a las porciones comprometidas.');run('DELETE FROM items WHERE id=?',old.id);}
+    for(const old of all('SELECT * FROM items WHERE date=?',date)) if(!old.combo_eligible && !keep.includes(old.id)) {if(old.used || get('SELECT order_id FROM allocations WHERE item_id=?',old.id)) fail('No puedes eliminar un plato con historial de pedidos. Puedes dejar su cantidad igual a las porciones comprometidas.');run('DELETE FROM items WHERE id=?',old.id);}
   });}
   function report(from,to) {
     validDate(from);validDate(to);if(from>to) fail('El rango de fechas no es válido.');
