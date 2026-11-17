@@ -1,6 +1,14 @@
 # Foodsys
 
-Primera versión de un sistema web para pensiones, restaurantes y comida rápida. JavaScript en el navegador, Node.js + Express en el servidor y SQLite como base de datos local. No necesita Python, Docker, una cuenta externa ni instalar un servidor de base de datos.
+Primera versión de un sistema web para pensiones, restaurantes y comida rápida. JavaScript en el navegador, Node.js + Express en el servidor y SQLite para uso local y PostgreSQL opcional para alojamiento en línea. El modo local no necesita Python, Docker ni un servidor externo de base de datos.
+
+## Publicar sin perder datos al desplegar
+
+Foodsys admite PostgreSQL mediante `DATABASE_URL`. La base se aloja separada del servidor web y se conserva al actualizar la aplicación, siempre que mantengas la misma base activa. Usa `DB_DRIVER=postgres` para impedir que una configuración incompleta vuelva a SQLite. El alojamiento gratuito de PostgreSQL puede tener caducidad; revisa el plan y conserva respaldos.
+
+**Antes de cambiar una instalación existente**, obtén una copia consistente de su SQLite e impórtala en una base PostgreSQL vacía. No reinicies la web con disco temporal antes de rescatar los datos. Incluimos `npm run db:backup`, `npm run db:migrate -- --sqlite ruta.sqlite --dry-run` y `npm run db:migrate -- --sqlite ruta.sqlite`. La importación comprueba filas y valores y no sobrescribe destinos ocupados. Las sesiones se cierran, las cuentas y contraseñas se conservan.
+
+Consulta [la guía completa de migración y configuración en Render](docs/postgresql.md). La aplicación expone `/api/health` para comprobar el motor activo sin revelar credenciales.
 
 ## Iniciar en Windows
 
@@ -107,7 +115,7 @@ Para compartir reservas fuera de la red local necesitas desplegar el servidor co
 
 ## Datos y copias de seguridad
 
-Los datos se conservan al reiniciar en `data/foodsys.sqlite`; `data/` está excluido de Git. SQLite puede crear archivos `-wal` y `-shm`. Para una copia manual consistente, detén el servidor con `Ctrl+C` y copia la carpeta `data` completa. No sincronices una base abierta entre computadoras ni coloques el archivo en una carpeta de red. Todos los dispositivos deben usar el mismo servidor.
+En modo SQLite, los datos se conservan al reiniciar en `data/foodsys.sqlite` en un disco persistente; `data/` está excluido de Git. SQLite puede crear archivos `-wal` y `-shm`. Para una copia manual consistente, detén el servidor con `Ctrl+C` y copia la carpeta `data` completa. No sincronices una base abierta entre computadoras ni coloques el archivo en una carpeta de red. Todos los dispositivos deben usar el mismo servidor.
 
 Para empezar desde cero, detén el servidor y **respalda** `data` antes de retirarla. El siguiente inicio creará una base nueva con usuarios y menú de ejemplo. No borres datos reales para cambiar una contraseña.
 
@@ -116,6 +124,10 @@ Variables opcionales del servidor:
 | Variable | Valor por defecto | Uso |
 | --- | --- | --- |
 | `PORT` | `3001` | Puerto del API y del servidor de producción |
+| `DATABASE_URL` | sin definir | Activa PostgreSQL; configúrala de forma privada en el entorno |
+| `DB_DRIVER` | sin definir | `postgres` obliga a tener conexión PostgreSQL y evita fallback a SQLite |
+| `PGSSLMODE` | TLS verificado en conexiones remotas | `verify-full` / `require` conservan verificación; no se acepta `no-verify` |
+| `PGSSLROOTCERT` | sin definir | Archivo de CA de confianza, cuando el proveedor lo requiera |
 | `DB_PATH` | `data/foodsys.sqlite` | Ruta al archivo de base de datos |
 | `COOKIE_SECURE` | sin definir | `true` para cookies solo por HTTPS al desplegar |
 | `ADMIN_PASSWORD`, `CAJERO_PASSWORD`, `COCINA_PASSWORD` | credenciales demo | Contraseñas solo en la creación inicial |
@@ -140,4 +152,4 @@ test/system.test.js  Pruebas de negocio y API (sin tocar los datos locales)
 
 Entidades: `audit_log`, `users`, `sessions`, `days` (menús diarios), `items` (producción y porciones comprometidas), `orders`, `lines`, `allocations` (componentes consumidos), `products`, `product_allocations`, `inventory_movements`, `legacy_products`, `payments`, `cash_days` y `expenses`.
 
-Siguientes mejoras posibles: turnos y horario configurables, devoluciones y cambios de pedidos pagados, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, migrar a PostgreSQL sería un siguiente paso razonable; para un negocio y un servidor, SQLite evita instalaciones adicionales.
+Siguientes mejoras posibles: turnos y horario configurables, devoluciones y cambios de pedidos pagados, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, usar el modo PostgreSQL sería apropiado; para un negocio y un servidor, SQLite evita instalaciones adicionales.
