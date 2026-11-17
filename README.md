@@ -29,7 +29,7 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 
 1. Entra como administrador. Se crea un menú de ejemplo para la fecha de Bolivia del primer inicio: 50 sopas de maní, 35 milanesas de pollo, 25 asados, gaseosas y extras. Son cantidades y precios editables, no ventas ficticias.
 2. En **Menú del día**, elige la fecha, define platos, precios y producción total. Publica el menú para habilitar las reservas públicas. Puedes preparar el menú de mañana. Cada producto permite cargar o quitar una foto JPEG, PNG o WebP (hasta 10 MB de entrada); el navegador la reduce antes de guardarla en SQLite. Las fotos también se muestran en el catálogo de venta y reservas. No se copia automáticamente el menú de ayer.
-3. En **Punto de venta**, agrega completos o platos sueltos. Un completo contiene una sopa y un segundo a elección, más un vaso de refresco incluido automáticamente. No se elige, no se registra como producto ni se vende suelto. Las gaseosas y otras bebidas se pueden vender por separado. El precio del completo es independiente de la suma de precios individuales.
+3. En **Punto de venta**, agrega completos o platos sueltos. Un completo contiene una sopa, un segundo y una guarnición a elección si el menú ofrece guarniciones, más un vaso de refresco incluido automáticamente. No se elige, no se registra como producto ni se vende suelto. Las gaseosas y otras bebidas se pueden vender por separado. El precio del completo es independiente de la suma de precios individuales.
 4. El nombre en caja es **Cliente sin nombre** por defecto y se puede editar; las reservas públicas siguen solicitando el nombre. Elige **Venta** para enviar el pedido inmediatamente a cocina, o **Reserva** para apartar porciones sin empezar a prepararlas. Puedes registrar las reservas recibidas por WhatsApp. No existe integración automática con WhatsApp.
 5. Registra el cobro en efectivo o por QR, o déjalo pendiente. Seleccionar QR significa que el cajero **ya verificó el abono en su banco**. No hay pasarela, cargo automático ni verificación bancaria.
 6. En **Pedidos y reservas**, cobra pendientes, envía reservas de hoy a cocina y anula reservas o pedidos sin pagar que todavía no estén en preparación.
@@ -37,6 +37,18 @@ Son cuentas para probar localmente. Antes del **primer arranque** puedes definir
 8. En **Caja y gastos**, registra el fondo inicial antes del primer movimiento; registra compras y otros gastos durante el día. Al terminar, cuenta el efectivo y registra el arqueo. Se muestra la diferencia entre el efectivo esperado y el contado.
 9. En **Reportes**, consulta el día, los últimos siete días, el mes o un rango personalizado. Los cobros en efectivo y QR aparecen en cuadros separados en Caja y gastos y en Reportes. Los cobros se agrupan por fecha de pago y medio; los gastos se agrupan por fecha de registro.
 10. En **Menú y QR**, comparte el enlace público o descarga la imagen PNG del QR de la página de reservas. Los comensales no necesitan cuenta. Una reserva confirmada ya aparta porciones y muestra su número para recogerla.
+
+## Guarniciones y edición de pedidos
+
+En **Menú del día**, crea productos con categoría **Guarniciones**, por ejemplo ensalada rusa o ensalada fit. Indica su precio de venta suelta y producción diaria. Cuando el menú tenga guarniciones, el completo exige elegir una y descuenta una porción del mismo stock que se usa para venderlas por separado. El precio del completo no suma el precio individual de la guarnición. La selección aparece también en reservas públicas y en el ticket de cocina. El vaso de refresco continúa incluido automáticamente, sin selector. Los menús anteriores sin guarniciones siguen funcionando; agrega esta categoría al prepararlos para habilitar su elección.
+
+En **Pedidos y reservas**, administrador y cajero tienen **Editar pedido** para pedidos sin pago, de hoy o futuros, en estado **Reservado** o **En espera**. Pueden cambiar sopa, segundo o guarnición de un completo, añadir o quitar platos, ensaladas sueltas y bebidas de inventario, cambiar cantidades, nombre, teléfono y nota. Se conserva el número, fecha, origen web/caja y estado del pedido. Guardar no cobra ni envía a cocina: después se usan los botones habituales.
+
+Las selecciones que se mantienen conservan su precio unitario original; los productos nuevos o cambios de selección usan el precio vigente. La pantalla muestra el total antes de guardar. El servidor valida stock y precios; libera las porciones anteriores y reserva las nuevas en una sola transacción. Si algo falla, no modifica ni el pedido ni el inventario. Si otra persona ya editó el pedido, lo cobró o empezó a prepararlo, se rechaza el guardado y hay que volver a abrirlo. Las ventas inmediatas no se editan con caja cerrada; las reservas sin pago sí pueden ajustarse.
+
+No se editan pedidos pagados, en preparación, listos, entregados, anulados o pasados. No hay devoluciones ni cobro de diferencias todavía. Cocina y los visitantes públicos no pueden editar pedidos. Cada edición queda registrada con responsable, fecha, detalle anterior y nuevo, y total. Al abrir el editor se muestran las últimas 20 ediciones; todos los registros permanecen en la base. El inventario de bebidas distingue unidades liberadas y apartadas por edición.
+
+La actualización agrega columnas a pedidos y líneas sin borrar datos existentes. En pedidos de versiones anteriores se recupera la selección si puede reconocerse; cuando sea ambigua, caja debe volver a seleccionar los productos de esa línea antes de guardar. Abrir el editor o salir sin guardar no altera stock.
 
 ## Usuarios y control de caja
 
@@ -67,12 +79,12 @@ Para actualizar, detén el servidor, respalda la carpeta `data`, reemplaza los a
 
 ## Reglas de inventario y dinero
 
-- Registrar un pedido compromete las porciones en una transacción SQLite. Un completo descuenta una sopa y el segundo elegido. El vaso de refresco está incluido en el precio, sin stock ni precio independientes. Cada segundo tiene su disponibilidad independiente.
+- Registrar un pedido compromete las porciones en una transacción SQLite. Un completo descuenta una sopa, el segundo y la guarnición elegidos. El vaso de refresco está incluido en el precio, sin stock ni precio independientes. Cada segundo tiene su disponibilidad independiente.
 - Los refrescos marcados anteriormente como incluidos se conservan internamente con sus registros históricos, pero se ocultan del menú editable y del catálogo. Los pedidos antiguos conservan precios, detalle y asignaciones; su anulación sigue liberando las porciones originales.
 - Una reserva ya cuenta contra el stock. Cobrarla o pasarla a cocina **no descuenta de nuevo**.
 - Los platos sueltos y los extras descuentan solo su producto. Las cantidades y los precios se validan en el servidor, no se confía en los importes del navegador.
 - Si no alcanza alguna porción, se rechaza el pedido entero: no se guarda una venta a medias. Los precios de pedidos existentes no cambian cuando se edita el menú.
-- Anular un pedido no pagado libera sus porciones una sola vez. Los pedidos pagados no se pueden anular en esta primera versión porque aún no implementa devoluciones. Tampoco se editan pedidos ya registrados.
+- Anular un pedido no pagado libera sus porciones una sola vez. Los pedidos pagados no se pueden anular en esta primera versión porque aún no implementa devoluciones. Las reservas y pedidos sin pago se pueden editar mientras estén reservados o en espera, antes de preparación.
 - Las reservas no vencen automáticamente. Caja debe anular las que ya no correspondan; los comensales no pueden anularlas por sí mismos en esta versión.
 - Los importes se guardan en **centavos enteros de boliviano**, para evitar errores de coma flotante.
 - **Resultado estimado = cobros − gastos registrados.** No es utilidad contable: hay que registrar ingredientes, salarios, alquiler, servicios y demás costos. No hay contabilidad por devengado, valoración de inventario ni conciliación bancaria.
@@ -128,4 +140,4 @@ test/system.test.js  Pruebas de negocio y API (sin tocar los datos locales)
 
 Entidades: `audit_log`, `users`, `sessions`, `days` (menús diarios), `items` (producción y porciones comprometidas), `orders`, `lines`, `allocations` (componentes consumidos), `products`, `product_allocations`, `inventory_movements`, `legacy_products`, `payments`, `cash_days` y `expenses`.
 
-Siguientes mejoras posibles: turnos y horario configurables, cambios de pedidos y devoluciones con auditoría, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, migrar a PostgreSQL sería un siguiente paso razonable; para un negocio y un servidor, SQLite evita instalaciones adicionales.
+Siguientes mejoras posibles: turnos y horario configurables, devoluciones y cambios de pedidos pagados, reservas con hora límite, impresión de tickets, costos por receta, múltiples sucursales y despliegue público. Para varias sucursales o varios servidores, migrar a PostgreSQL sería un siguiente paso razonable; para un negocio y un servidor, SQLite evita instalaciones adicionales.

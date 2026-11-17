@@ -33,6 +33,8 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     db.exec("ALTER TABLE items ADD COLUMN combo_eligible INTEGER NOT NULL DEFAULT 0; UPDATE items SET combo_eligible=1 WHERE id IN (SELECT MIN(id) FROM items WHERE kind='drink' GROUP BY date)");
   }
   if(!db.prepare('PRAGMA table_info(items)').all().some(c=>c.name==='photo')) db.exec("ALTER TABLE items ADD COLUMN photo TEXT NOT NULL DEFAULT ''");
+  if(!db.prepare('PRAGMA table_info(lines)').all().some(c=>c.name==='selection')) db.exec('ALTER TABLE lines ADD COLUMN selection TEXT');
+  if(!db.prepare('PRAGMA table_info(orders)').all().some(c=>c.name==='version')) db.exec('ALTER TABLE orders ADD COLUMN version INTEGER NOT NULL DEFAULT 0');
   const all = (sql,...args) => db.prepare(sql).all(...args);
   const get = (sql,...args) => db.prepare(sql).get(...args);
   const run = (sql,...args) => db.prepare(sql).run(...args);
@@ -62,11 +64,20 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
   reconcile();
   function menu(date, publicOnly=false) { validDate(date); const day=get('SELECT * FROM days WHERE date=?',date); return day && (!publicOnly || day.published) ? {...day,items:[...all("SELECT *,stock-used AS available FROM items WHERE date=? AND combo_eligible=0 AND kind<>'drink' ORDER BY id",date),...inventory.catalog()]} : {date,combo_price:2500,published:0,items:[]}; }
   function orders(date) { return all(`SELECT o.*,p.method,p.amount AS paid FROM orders o LEFT JOIN payments p ON p.order_id=o.id WHERE o.date=? ORDER BY o.id DESC`,date).map(o=>({...o,lines:all('SELECT * FROM lines WHERE order_id=?',o.id)})); }
-  function createOrder(body, source='staff') { return transaction(()=>{
+  function createOrder(body, source='staff', editing=null, actor=null) { return transaction(()=>{
+    let previous=null,oldLines=[];
+    if(editing!==null){
+      previous=editableOrder(editing);oldLines=editLines(previous.id);
+      if(!Number.isInteger(body.version)||body.version!==previous.version)fail('El pedido cambió. Vuelve a abrirlo antes de editar.',409);
+      if(body.date!==undefined&&body.date!==previous.date)fail('No se puede cambiar la fecha del pedido.');
+      if(body.payment)fail('Guarda la edición antes de registrar el cobro.');
+      source=previous.source;body={...body,date:previous.date,type:previous.type,customer:body.customer??previous.customer,phone:body.phone??previous.phone,note:body.note??previous.note};
+      releaseOrder(previous.id,'edit_release');
+    }
     const date=validDate(body.date);
     if(date<today()) fail('No se aceptan pedidos para fechas pasadas.');
     const day=get('SELECT * FROM days WHERE date=?',date);
-    if(!day || (source==='public' && !day.published)) fail('El menú aún no está publicado.');
+    if(!day || (source==='public' && !previous && !day.published)) fail('El menú aún no está publicado.');
     const reservation=source==='public' || body.type==='reservation';
     if(!reservation && date!==today()) fail('Las ventas deben corresponder a hoy.');
     if(!reservation) openCash();
@@ -77,26 +88,83 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     const allocate=(id,quantity,kind)=>{ const item=get('SELECT * FROM items WHERE id=? AND date=?',Number(id)||0,date); if(!item || (kind && item.kind!==kind)) fail('El plato elegido no está en este menú.'); allocations.set(item.id,(allocations.get(item.id)||0)+quantity); return item; };
     for(const line of body.lines) {
       const q=Number(line.quantity); if(!Number.isInteger(q)||q<1||q>100) fail('Cantidad inválida.');
-      let price,label;
+      let price,label;const choice=normalizeChoice(line);
       if(line.kind==='product') {
         const product=get('SELECT * FROM products WHERE id=? AND active=1',Number(line.productId)||0);if(!product)fail('Bebida no disponible.');
         products.set(product.id,(products.get(product.id)||0)+q);price=product.price;label=product.name;
       }
-      else if(line.kind==='combo') { const soup=allocate(line.soupId,q,'soup'), main=allocate(line.mainId,q,'main'); price=day.combo_price; label=`Completo · ${soup.name} + ${main.name} + vaso de refresco incluido`; }
+      else if(line.kind==='combo') { const soup=allocate(line.soupId,q,'soup'), main=allocate(line.mainId,q,'main'); price=day.combo_price; const hasSides=Boolean(get("SELECT id FROM items WHERE date=? AND kind='side' LIMIT 1",date));
+        const side=hasSides||line.sideId?allocate(line.sideId,q,'side'):null;
+        label=`Completo · ${soup.name} + ${main.name}${side?' + '+side.name:''} + vaso de refresco incluido`; }
       else { const item=allocate(line.itemId,q); if(item.kind==='drink'&&!item.combo_eligible)fail('Selecciona la bebida desde el inventario actualizado.');
       if(item.combo_eligible) fail('El refresco solo se sirve incluido en el completo.'); price=item.price;label=item.name; }
-      lines.push({label,quantity:q,price});total+=price*q;
+      const original=oldLines.find(l=>l.id===Number(line.lineId));
+      if(original?.choice&&JSON.stringify(original.choice)===JSON.stringify(choice)){price=original.price;label=original.label;}
+      lines.push({label,quantity:q,price,selection:JSON.stringify(choice)});total+=price*q;
     }
     for(const [id,q] of allocations) { const item=get('SELECT * FROM items WHERE id=?',id); if(item.stock-item.used<q) fail(`No alcanza ${item.name}. Quedan ${item.stock-item.used} porciones.`,409); }
     for(const [id,q] of products){const p=get('SELECT * FROM products WHERE id=?',id);if(p.stock<q)fail(`No alcanza ${p.name}. Quedan ${p.stock} unidades.`,409);}
     if(body.expectedTotal !== undefined && body.expectedTotal !== total) fail('El precio del menú cambió. Actualiza la página y revisa tu pedido antes de confirmarlo.',409);
-    const id=Number(run('INSERT INTO orders(date,customer,phone,note,type,source,status,total,created_at) VALUES (?,?,?,?,?,?,?,?,?)',date,customer,String(body.phone||'').slice(0,30),String(body.note||'').slice(0,500),reservation?'reservation':'sale',source,reservation?'reserved':'queued',total,stamp()).lastInsertRowid);
-    for(const l of lines) run('INSERT INTO lines(order_id,label,quantity,price) VALUES (?,?,?,?)',id,l.label,l.quantity,l.price);
+    let id;
+    if(previous){
+      id=previous.id;run('DELETE FROM lines WHERE order_id=?',id);run('DELETE FROM allocations WHERE order_id=?',id);run('DELETE FROM product_allocations WHERE order_id=?',id);
+      run('UPDATE orders SET customer=?,phone=?,note=?,total=?,version=version+1 WHERE id=?',customer,String(body.phone||'').slice(0,30),String(body.note||'').slice(0,500),total,id);
+    }else id=Number(run('INSERT INTO orders(date,customer,phone,note,type,source,status,total,created_at) VALUES (?,?,?,?,?,?,?,?,?)',date,customer,String(body.phone||'').slice(0,30),String(body.note||'').slice(0,500),reservation?'reservation':'sale',source,reservation?'reserved':'queued',total,stamp()).lastInsertRowid);
+    for(const l of lines) run('INSERT INTO lines(order_id,label,quantity,price,selection) VALUES (?,?,?,?,?)',id,l.label,l.quantity,l.price,l.selection);
     for(const [itemId,q] of allocations) {run('INSERT INTO allocations VALUES (?,?,?)',id,itemId,q);run('UPDATE items SET used=used+? WHERE id=?',q,itemId);}
-    for(const [productId,q] of products){run('INSERT INTO product_allocations VALUES (?,?,?)',id,productId,q);inventory.changeStock(productId,-q,'order',id);}
+    for(const [productId,q] of products){run('INSERT INTO product_allocations VALUES (?,?,?)',id,productId,q);inventory.changeStock(productId,-q,previous?'edit_reservation':'order',id);}
+    if(previous)control.audit('order_updated',id,actor,{before:{customer:previous.customer,phone:previous.phone,note:previous.note,total:previous.total,lines:oldLines.map(l=>({label:l.label,quantity:l.quantity,price:l.price}))},after:{customer,phone:String(body.phone||'').slice(0,30),note:String(body.note||'').slice(0,500),total,lines:lines.map(l=>({label:l.label,quantity:l.quantity,price:l.price}))}});
     if(source==='staff' && body.payment) pay(id,body.payment);
-    return {id,total,status:reservation?'reserved':'queued'};
+    return {id,total,status:previous?.status||(reservation?'reserved':'queued'),version:previous?previous.version+1:0};
   }); }
+  function normalizeChoice(line){
+    if(line.kind==='combo')return {kind:'combo',soupId:Number(line.soupId)||0,mainId:Number(line.mainId)||0,sideId:Number(line.sideId)||0};
+    if(line.kind==='product')return {kind:'product',productId:Number(line.productId)||0};
+    return {kind:'item',itemId:Number(line.itemId)||0};
+  }
+  function editableOrder(id){
+    const order=get('SELECT * FROM orders WHERE id=?',Number(id));if(!order)fail('Pedido no encontrado.',404);
+    if(!['reserved','queued'].includes(order.status))fail('Solo se editan reservas o pedidos que todavía no están en preparación.',409);
+    if(get('SELECT id FROM payments WHERE order_id=?',order.id))fail('No se puede editar un pedido pagado.',409);
+    if(order.date<today())fail('No se puede editar un pedido pasado.',409);
+    return order;
+  }
+  function releaseOrder(id,reason){
+      for(const a of all('SELECT * FROM product_allocations WHERE order_id=?',id))inventory.changeStock(a.product_id,a.quantity,reason,id);
+      for(const a of all('SELECT a.quantity,l.product_id FROM allocations a JOIN legacy_products l ON l.item_id=a.item_id WHERE a.order_id=?',id))inventory.changeStock(a.product_id,a.quantity,reason,id);
+      for(const a of all('SELECT * FROM allocations WHERE order_id=?',id)) run('UPDATE items SET used=used-? WHERE id=?',a.quantity,a.item_id);
+  }
+  function editLines(id){
+    const items=all('SELECT i.* FROM allocations a JOIN items i ON i.id=a.item_id WHERE a.order_id=?',id);
+    const products=all('SELECT p.* FROM product_allocations a JOIN products p ON p.id=a.product_id WHERE a.order_id=?',id);
+    return all('SELECT * FROM lines WHERE order_id=?',id).map(line=>{
+      if(line.selection)return {...line,choice:JSON.parse(line.selection)};
+      // Older versions stored only display text. Infer only unambiguous choices; otherwise ask staff to select again.
+      let choices=[];
+      if(line.label.startsWith('Completo · ')){
+        for(const soup of items.filter(i=>i.kind==='soup'))for(const main of items.filter(i=>i.kind==='main')){
+          const sides=[null,...items.filter(i=>i.kind==='side')];for(const side of sides)if(['vaso de refresco incluido',...items.filter(i=>i.kind==='drink').map(i=>i.name)].some(drink=>line.label===`Completo · ${soup.name} + ${main.name}${side?' + '+side.name:''} + ${drink}`))choices.push(normalizeChoice({kind:'combo',soupId:soup.id,mainId:main.id,sideId:side?.id}));
+        }
+        if(!choices.length){const soups=items.filter(i=>i.kind==='soup'),mains=items.filter(i=>i.kind==='main');if(soups.length===1&&mains.length===1)choices.push(normalizeChoice({kind:'combo',soupId:soups[0].id,mainId:mains[0].id}));}
+      }else{
+        for(const item of items.filter(i=>i.name===line.label)){
+          const legacy=get('SELECT product_id FROM legacy_products WHERE item_id=?',item.id);
+          if(legacy)choices.push(normalizeChoice({kind:'product',productId:legacy.product_id}));else if(item.kind!=='drink')choices.push(normalizeChoice({kind:'item',itemId:item.id}));
+        }
+        for(const p of products.filter(p=>p.name===line.label))choices.push(normalizeChoice({kind:'product',productId:p.id}));
+      }
+      return {...line,choice:choices.length===1?choices[0]:null};
+    });
+  }
+  function orderForEdit(id){
+    const order=editableOrder(id),data=menu(order.date);
+    const own=new Map(all('SELECT item_id,SUM(quantity) AS q FROM allocations WHERE order_id=? GROUP BY item_id',id).map(a=>[a.item_id,a.q]));
+    const ownProducts=new Map(all('SELECT product_id,SUM(quantity) AS q FROM product_allocations WHERE order_id=? GROUP BY product_id',id).map(a=>[a.product_id,a.q]));
+    for(const a of all('SELECT l.product_id,SUM(a.quantity) AS q FROM allocations a JOIN legacy_products l ON l.item_id=a.item_id WHERE a.order_id=? GROUP BY l.product_id',id))ownProducts.set(a.product_id,(ownProducts.get(a.product_id)||0)+a.q);
+    data.items=data.items.map(i=>({...i,available:i.available+(i.productId?ownProducts.get(i.productId)||0:own.get(i.id)||0)}));
+    return {order:{...order,lines:editLines(id)},menu:data,history:all("SELECT actor_name,actor_username,created_at,details FROM audit_log WHERE action='order_updated' AND entity_id=? ORDER BY id DESC LIMIT 20",String(id)).map(e=>({...e,details:JSON.parse(e.details)}))};
+  }
+  const editOrder=(id,body,actor)=>createOrder(body,'staff',Number(id),actor);
   function pay(id,method) {
     if(!['cash','qr'].includes(method)) fail('Medio de pago inválido.'); openCash();
     const order=get('SELECT * FROM orders WHERE id=?',id); if(!order || order.status==='cancelled') fail('Pedido no disponible.');
@@ -113,9 +181,7 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     if(status==='delivered' && !get('SELECT id FROM payments WHERE order_id=?',id)) fail('Caja debe registrar el pago antes de entregar.');
     if(status==='cancelled') {
       if(get('SELECT id FROM payments WHERE order_id=?',id)) fail('Un pedido pagado requiere gestionar su devolución. Esta versión no permite anularlo.');
-      for(const a of all('SELECT * FROM product_allocations WHERE order_id=?',id))inventory.changeStock(a.product_id,a.quantity,'cancellation',id);
-      for(const a of all('SELECT a.quantity,l.product_id FROM allocations a JOIN legacy_products l ON l.item_id=a.item_id WHERE a.order_id=?',id))inventory.changeStock(a.product_id,a.quantity,'cancellation',id);
-      for(const a of all('SELECT * FROM allocations WHERE order_id=?',id)) run('UPDATE items SET used=used-? WHERE id=?',a.quantity,a.item_id);
+      releaseOrder(id,'cancellation');
     }
     run('UPDATE orders SET status=? WHERE id=?',status,id);
   }); }
@@ -131,7 +197,7 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
       if(item.kind==='drink')fail('Registra las bebidas en Inventario de bebidas.');
       if(item.combo_eligible) fail('El vaso de refresco ya viene incluido en el completo; no se registra como producto.');
       const name=String(item.name||'').trim().slice(0,100), stock=Number(item.stock);
-      if(!name||!['soup','main','extra'].includes(item.kind)||!Number.isInteger(stock)||stock<0||stock>10000) fail('Revisa nombre, categoría y cantidad de cada plato.');
+      if(!name||!['soup','main','side','extra'].includes(item.kind)||!Number.isInteger(stock)||stock<0||stock>10000) fail('Revisa nombre, categoría y cantidad de cada plato.');
       const price=money(item.price);
       if(item.photo!==undefined && (typeof item.photo!=='string' || item.photo.length>200000 || (item.photo && !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(item.photo)))) fail('Foto inválida. Usa una imagen JPEG, PNG o WebP de hasta 150 KB.');
       if(item.id) {const old=get('SELECT * FROM items WHERE id=? AND date=?',Number(item.id),date);if(!old) fail('Plato inválido.');if(stock<old.used) fail(`${name}: ya hay ${old.used} porciones comprometidas.`); if(old.used && old.kind!==item.kind) fail('No puedes cambiar la categoría de un plato comprometido.');run('UPDATE items SET name=?,kind=?,price=?,stock=? WHERE id=?',name,item.kind,price,stock,old.id);keep.push(old.id);}
@@ -150,5 +216,5 @@ export function createStore(filename, { seed = true, now = () => new Date() } = 
     return {from,to,income,spent,balance:income-spent,cash,qr,revenue,expenses,count:revenue.reduce((s,r)=>s+r.count,0)};
   }
   function snapshot(date) {reconcile();return {today:today(),date,menu:menu(date),orders:orders(date),cash:get('SELECT * FROM cash_days WHERE date=?',today()),report:report(date,date)};}
-  return {db,all,get,run,transaction,today,stamp,reconcile,openCash,menu,orders,createOrder,pay,transition,saveMenu,report,snapshot,...inventory,...control};
+  return {db,all,get,run,transaction,today,stamp,reconcile,openCash,menu,orders,createOrder,orderForEdit,editOrder,pay,transition,saveMenu,report,snapshot,...inventory,...control};
 }

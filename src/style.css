@@ -19,3 +19,5 @@
 .beverage-photo{margin:18px 0}.beverage-photo .photo-preview{width:120px;height:100px}.beverage-photo input[type=file]{font-size:12px;padding:10px}
 
 .audit-title{margin-top:28px}.sidebar nav{overflow-y:auto;min-height:0}.sidebar-bottom{flex-shrink:0}
+
+.order-edit-modal{max-width:780px;width:100%}.edit-order-row{padding:16px;border:1px solid var(--line);border-radius:8px;margin-bottom:14px}.edit-line-top{display:grid;grid-template-columns:1fr 100px auto;gap:12px;align-items:center}.edit-note{margin-top:20px}.product-art.side{background:#e4efdc}.food-icon.side{background:#e4efdc}.edit-order-row label{min-width:0}.edit-order-row select{min-width:0;max-width:100%}@media(max-width:600px){.edit-line-top{grid-template-columns:1fr 80px}.edit-line-top>button{grid-column:1/-1}.order-edit-modal .form-columns{grid-template-columns:1fr}}
