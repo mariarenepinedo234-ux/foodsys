@@ -6,6 +6,7 @@ import '@fontsource/manrope/latin-600.css';
 import '@fontsource/manrope/latin-700.css';
 import '@fontsource/manrope/latin-800.css';
 import './style.css';
+import './custom.css';
 import QRCode from 'qrcode';
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

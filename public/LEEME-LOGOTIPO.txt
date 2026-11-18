@@ -1,0 +1,3 @@
+Puedes colocar aquí tu imagen: logo.png, logo.webp o logo.svg.
+Vite publica esta carpeta en la raíz del sitio: public/logo.png se usa como /logo.png.
+Consulta MANUAL_LOCAL_Y_EDICION.html para reemplazar la marca actual en src/main.js.

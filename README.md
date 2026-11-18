@@ -2,6 +2,10 @@
 
 Primera versión de un sistema web para pensiones, restaurantes y comida rápida. JavaScript en el navegador, Node.js + Express en el servidor y SQLite para uso local y PostgreSQL opcional para alojamiento en línea. El modo local no necesita Python, Docker ni un servidor externo de base de datos.
 
+## Pruebas locales y personalización
+
+Para probar con PostgreSQL local y cambiar logotipo, colores o textos, abre [MANUAL_LOCAL_Y_EDICION.html](MANUAL_LOCAL_Y_EDICION.html) en tu navegador, o lee [el manual en Markdown](MANUAL_LOCAL_Y_EDICION.md). Incluye `compose.yaml`, `.env.example` y `src/custom.css`; no contiene datos ni credenciales de Render.
+
 ## Publicar sin perder datos al desplegar
 
 Foodsys admite PostgreSQL mediante `DATABASE_URL`. La base se aloja separada del servidor web y se conserva al actualizar la aplicación, siempre que mantengas la misma base activa. Usa `DB_DRIVER=postgres` para impedir que una configuración incompleta vuelva a SQLite. El alojamiento gratuito de PostgreSQL puede tener caducidad; revisa el plan y conserva respaldos.

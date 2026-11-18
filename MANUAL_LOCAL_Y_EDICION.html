@@ -1,0 +1,253 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Foodsys · Manual local y de edición</title><style>body{font:16px/1.65 system-ui,sans-serif;margin:0;background:#f3f6f5;color:#223b32}main{max-width:1000px;margin:28px auto;background:white;padding:40px;border-radius:14px}h1,h2,h3{line-height:1.3;color:#204c3e}h2{margin-top:2.2em;border-bottom:1px solid #dce6e0;padding-bottom:.4em}a{color:#255fa5}code{background:#edf2ef;padding:2px 5px;border-radius:4px}pre{background:#162c25;color:#f1f6f3;padding:18px;overflow:auto;border-radius:8px}pre code{background:none;padding:0}table{border-collapse:collapse;display:block;overflow-x:auto}td,th{border:1px solid #dce6e0;padding:10px;text-align:left}th{background:#edf3ef}li{margin:.5em 0}@media(max-width:650px){main{margin:0;padding:22px;border-radius:0}body{font-size:15px}}@media print{body{background:white}main{margin:0;padding:0;max-width:none}h2{break-after:avoid}pre,table{break-inside:avoid}}</style></head><body><main><h1>Foodsys: pruebas locales con PostgreSQL y edición visual</h1>
+<p>Este paquete contiene la aplicación, una configuración de PostgreSQL 18 para tu computadora y este manual. No contiene el servidor PostgreSQL instalado ni una copia de los datos de Render: la base local se crea al iniciar el sistema. Las pruebas locales no cambian tu web ni tu base de Render.</p>
+<p>Puedes leer este archivo en Visual Studio Code o abrir <strong>MANUAL_LOCAL_Y_EDICION.html</strong> con doble clic en tu navegador, sin conexión.</p>
+<h2>1. Lo que necesitas</h2>
+<ul>
+<li>Node.js 24 o posterior, con npm: <a href="https://nodejs.org/">https://nodejs.org/</a></li>
+<li>Docker Desktop con Docker Compose, abierto y funcionando: <a href="https://www.docker.com/products/docker-desktop/">https://www.docker.com/products/docker-desktop/</a></li>
+<li>Visual Studio Code para editar archivos: <a href="https://code.visualstudio.com/">https://code.visualstudio.com/</a></li>
+</ul>
+<p>Si ya tienes PostgreSQL instalado, puedes usarlo sin Docker; consulta la alternativa del apartado 4.</p>
+<h2>2. Iniciar en Windows</h2>
+<p>Descomprime el ZIP. Abre la carpeta <strong>foodsys</strong> en Visual Studio Code y selecciona <strong>Terminal → New Terminal</strong>. Todos los comandos se ejecutan en esa carpeta, donde está <code>package.json</code>.</p>
+<p>Primero copia la configuración de ejemplo. Hazlo una sola vez; no reemplaces un <code>.env</code> que ya hayas configurado:</p>
+<pre><code class="language-powershell">Copy-Item .env.example .env
+</code></pre>
+<p>Abre <code>.env</code> en el editor. La configuración incluida apunta únicamente a <code>127.0.0.1:5433</code>, una base local. No pegues la conexión de Render: si usas esa conexión, tus pruebas sí modificarían datos en línea. La contraseña del ejemplo es de demostración local y no debe usarse al publicar.</p>
+<p>Instala dependencias y levanta la base:</p>
+<pre><code class="language-powershell">npm.cmd ci
+docker compose up -d --wait db
+npm.cmd run dev:local
+</code></pre>
+<p>Abre <strong><a href="http://localhost:5173">http://localhost:5173</a></strong>. Conserva la terminal abierta. Las cuentas de la base LOCAL nueva son:</p>
+<table>
+<thead>
+<tr>
+<th>Perfil</th>
+<th>Usuario</th>
+<th>Contraseña de prueba</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Administrador</td>
+<td>admin</td>
+<td>admin123</td>
+</tr>
+<tr>
+<td>Cajero</td>
+<td>cajero</td>
+<td>cajero123</td>
+</tr>
+<tr>
+<td>Cocina</td>
+<td>cocina</td>
+<td>cocina123</td>
+</tr>
+</tbody></table>
+<p>Puedes cambiar esas contraseñas en <code>.env</code> <strong>antes del primer arranque</strong> de la aplicación. Después, se cambian desde <strong>Usuarios</strong>, con una cuenta de administrador. Cambiar <code>.env</code> no sustituye las contraseñas de usuarios existentes.</p>
+<p>Se crea un menú de ejemplo para la fecha actual de Bolivia. Los pedidos, caja, fotos, bebidas y guarniciones se guardan en PostgreSQL. El horario de caja sigue siendo el de Bolivia y el cierre automático es a las 18:00; para probar reservas sin cobrar no necesitas que la caja esté abierta.</p>
+<h2>3. Iniciar en macOS o Linux</h2>
+<p>En una terminal dentro de <code>foodsys</code>, copia el archivo una sola vez si todavía no existe <code>.env</code>:</p>
+<pre><code class="language-sh">cp .env.example .env
+npm ci
+docker compose up -d --wait db
+npm run dev:local
+</code></pre>
+<p>Abre <strong><a href="http://localhost:5173">http://localhost:5173</a></strong>. También puedes usar los comandos <code>npm</code> sin <code>.cmd</code> en Windows si tu terminal los permite; <code>.cmd</code> evita problemas frecuentes de políticas de PowerShell.</p>
+<h2>4. Comprobar la base y detener el sistema</h2>
+<p>Abre <strong><a href="http://localhost:3001/api/health">http://localhost:3001/api/health</a></strong>. Debe responder:</p>
+<pre><code class="language-json">{&quot;status&quot;:&quot;ok&quot;,&quot;database&quot;:&quot;postgres&quot;}
+</code></pre>
+<p>El archivo <code>compose.yaml</code> usa PostgreSQL 18 y un volumen llamado <code>foodsys_pg_data</code> (Docker añade el nombre del proyecto como prefijo). Allí quedan los datos, separados del código. Actualizar archivos o reiniciar la aplicación no borra ese volumen.</p>
+<p>Para detener la aplicación, pulsa <strong>Ctrl+C</strong> en la terminal. Para detener PostgreSQL conservando el volumen:</p>
+<pre><code class="language-sh">docker compose stop db
+</code></pre>
+<p>Para volver a arrancar:</p>
+<pre><code class="language-sh">docker compose up -d --wait db
+npm run dev:local
+</code></pre>
+<p>En Windows puedes usar <code>npm.cmd run dev:local</code>. <strong>No uses <code>docker compose down -v</code> ni borres el volumen:</strong> esas acciones eliminan la base local. Este paquete no necesita ejecutar un borrado para funcionar.</p>
+<p>Los nuevos comandos <code>dev:local</code> y <code>start:local</code> usan <code>scripts/local-server.mjs</code> para leer <code>.env</code> y dar prioridad a sus valores sobre los heredados de la terminal. Estos comandos solo permiten PostgreSQL en <code>localhost</code> o <code>127.0.0.1</code>: rechazan una URL remota para evitar que una prueba modifique Render. Los comandos originales <code>npm run dev</code> y <code>npm start</code> siguen leyendo las variables del proceso, como en Render; no cargan <code>.env</code> por sí solos.</p>
+<h3>Alternativa: PostgreSQL instalado sin Docker</h3>
+<p>Crea en tu PostgreSQL una base exclusiva para pruebas y un usuario con permisos sobre esa base. En <code>.env</code>, sustituye <code>DATABASE_URL</code> por su conexión local y usa <code>DB_DRIVER=postgres</code>. Para un servidor local sin TLS, usa <code>PGSSLMODE=disable</code> y <code>COOKIE_SECURE=false</code>. El puerto suele ser <code>5432</code> si usas una instalación propia.</p>
+<p>No necesitas ejecutar <code>docker compose</code> en esta alternativa. Ejecuta <code>npm ci</code> y <code>npm run dev:local</code>: Foodsys crea su esquema automáticamente. No hace falta importar un archivo SQL inicial. Las otras variables <code>POSTGRES_*</code> del ejemplo son utilizadas por Docker, no configuran un servidor que ya instalaste por separado.</p>
+<h3>Si aparece un error</h3>
+<ul>
+<li><strong>Docker no responde:</strong> abre Docker Desktop y espera a que termine de iniciar.</li>
+<li><strong>Puerto 5433 ocupado:</strong> cambia <code>POSTGRES_PORT</code> y el puerto dentro de <code>DATABASE_URL</code> al mismo número libre. No cambies <code>PORT=3001</code>: el proxy de Vite utiliza ese puerto.</li>
+<li><strong>Password authentication failed:</strong> comprueba usuario, contraseña y base. Modificar la contraseña en <code>.env</code> no cambia automáticamente la contraseña de una base que ya existe en el volumen. Corrígela con la administración de PostgreSQL sin borrar los datos.</li>
+<li><strong>La página no carga:</strong> comprueba que <code>npm run dev:local</code> siga ejecutándose y revisa la terminal.</li>
+<li><strong>Falla el certificado al usar una base remota:</strong> la configuración local sin TLS es solo para tu computadora. No uses <code>PGSSLMODE=disable</code> para evitar errores de certificado de Render. Consulta <code>docs/postgresql.md</code>.</li>
+</ul>
+<h2>5. Mapa de archivos para editar</h2>
+<table>
+<thead>
+<tr>
+<th>Qué quieres cambiar</th>
+<th>Ruta / archivo</th>
+<th>Dónde buscar</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Colores y estilos propios</td>
+<td><code>src/custom.css</code></td>
+<td>Archivo preparado para tus cambios; tiene prioridad sobre los estilos base</td>
+</tr>
+<tr>
+<td>Diseño completo y reglas responsive</td>
+<td><code>src/style.css</code></td>
+<td>Selectores como <code>.sidebar</code>, <code>.primary</code>, <code>.login-story</code></td>
+</tr>
+<tr>
+<td>Logotipo y textos de las pantallas</td>
+<td><code>src/main.js</code></td>
+<td>Funciones <code>shell</code>, <code>login</code>, <code>publicPage</code> y <code>sharePage</code></td>
+</tr>
+<tr>
+<td>Imágenes del logotipo</td>
+<td><code>public/</code></td>
+<td>Por ejemplo <code>public/logo.png</code>, que se usa en HTML como <code>/logo.png</code></td>
+</tr>
+<tr>
+<td>Título de la pestaña y color del navegador</td>
+<td><code>index.html</code></td>
+<td><code>&lt;title&gt;</code>, <code>meta name=&quot;theme-color&quot;</code> y descripción</td>
+</tr>
+<tr>
+<td>Color oscuro del QR</td>
+<td><code>src/main.js</code></td>
+<td><code>QRCode.toCanvas</code>, opción <code>color.dark</code> dentro de <code>render</code></td>
+</tr>
+<tr>
+<td>Reglas de menús, stock, pedidos y horario</td>
+<td><code>server/store.js</code></td>
+<td>Lógica del servidor; requiere pruebas antes de publicar</td>
+</tr>
+<tr>
+<td>Usuarios, permisos de caja e historial</td>
+<td><code>server/control.js</code> y <code>server/index.js</code></td>
+<td>Administración y protección de rutas</td>
+</tr>
+<tr>
+<td>Inventario permanente de bebidas</td>
+<td><code>server/inventory.js</code></td>
+<td>Productos y movimientos</td>
+</tr>
+<tr>
+<td>Conexión SQLite/PostgreSQL</td>
+<td><code>server/database.js</code></td>
+<td>No es necesario modificarlo para cambiar la apariencia</td>
+</tr>
+<tr>
+<td>Variables locales privadas</td>
+<td><code>.env</code></td>
+<td>No se incluye en Git ni debe compartirse</td>
+</tr>
+</tbody></table>
+<h2>6. Cambiar los colores</h2>
+<p>Abre <strong><code>src/custom.css</code></strong> y añade, por ejemplo, esta paleta azul:</p>
+<pre><code class="language-css">:root {
+  --green: #244c91;
+  --orange: #e7953b;
+  --muted: #718096;
+  --line: #e2e8f0;
+  color: #243449;
+  background: #f4f7fb;
+}
+
+.primary:hover {
+  background: #18396f;
+}
+
+.login-story {
+  background: var(--green);
+}
+
+.nav-item.active {
+  background: #e8eef9;
+  color: var(--green);
+}
+</code></pre>
+<p>Guarda el archivo: Vite actualiza la vista mientras <code>dev:local</code> está abierto. <code>--green</code> conserva ese nombre en el código, aunque le asignes azul, rojo u otro color.</p>
+<p>La hoja base tiene colores escritos directamente además de las variables. Por eso, cambiar solo <code>--green</code> no cambia todos los tonos: sobrescribe el selector correspondiente en <code>custom.css</code>, como se hace con <code>.login-story</code> o <code>.nav-item.active</code>. Evita editar <code>dist/</code>, porque se vuelve a generar al compilar.</p>
+<p>Para el color de la barra del navegador, abre <code>index.html</code> y cambia:</p>
+<pre><code class="language-html">&lt;meta name=&quot;theme-color&quot; content=&quot;#244c91&quot; /&gt;
+</code></pre>
+<h2>7. Cambiar el logotipo</h2>
+<p>La marca actual se dibuja con el símbolo <code>◒</code> y la palabra <code>foodsys</code>; no es un archivo de imagen. Para usar tu imagen:</p>
+<ol>
+<li>Guarda tu logo en <strong><code>public/logo.png</code></strong>. Puedes crear o reemplazar ese archivo. Se recomiendan PNG o WebP con fondo transparente; SVG también funciona si es un archivo de confianza.</li>
+<li>Abre <strong><code>src/main.js</code></strong> y usa <strong>Ctrl+F</strong> para buscar las funciones indicadas abajo. El archivo tiene funciones en líneas largas; no importa el número de línea, busca por nombre.</li>
+<li>En <code>shell(content)</code>, reemplaza el contenido de la marca del menú lateral:</li>
+</ol>
+<pre><code class="language-html">&lt;a class=&quot;brand&quot; href=&quot;/&quot;&gt;
+  &lt;img class=&quot;brand-logo&quot; src=&quot;/logo.png&quot; alt=&quot;Nombre de tu negocio&quot;&gt;
+  &lt;span&gt;Mi Pensión&lt;small&gt;TU COCINA, EN ORDEN&lt;/small&gt;&lt;/span&gt;
+&lt;/a&gt;
+</code></pre>
+<p>Ese HTML va <strong>dentro del texto entre comillas invertidas</strong> de la función. No elimines las comillas invertidas ni las expresiones <code>${...}</code> del resto de la pantalla.</p>
+<ol start="4">
+<li>Repite el cambio en estos lugares para que la marca sea consistente:</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>Función</th>
+<th>Dónde aparece</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>shell(content)</code></td>
+<td>Menú lateral después de iniciar sesión</td>
+</tr>
+<tr>
+<td><code>login()</code></td>
+<td>Marca de la pantalla de acceso</td>
+</tr>
+<tr>
+<td><code>publicPage()</code></td>
+<td>Cabecera de reservas; conserva su enlace <code>href=&quot;/reservar&quot;</code></td>
+</tr>
+<tr>
+<td><code>sharePage()</code></td>
+<td>Marca sobre el QR; aquí el contenedor es un <code>&lt;div class=&quot;brand&quot;&gt;</code>, no un enlace</td>
+</tr>
+</tbody></table>
+<ol start="5">
+<li>Añade a <strong><code>src/custom.css</code></strong>:</li>
+</ol>
+<pre><code class="language-css">.brand-logo {
+  display: block;
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+</code></pre>
+<p>Si el logo ya incluye el nombre del negocio, puedes quitar el <code>&lt;span&gt;</code> de esa marca. No hagas un reemplazo global de todos los símbolos: algunos son iconos de platos, botones u otros elementos.</p>
+<p>La descarga PNG actual del QR contiene el código QR del canvas. La marca visible en la tarjeta HTML no se incrusta automáticamente dentro de ese PNG.</p>
+<h3>Nombre de la pestaña e icono</h3>
+<p>En <strong><code>index.html</code></strong>, modifica el título y la descripción. Para un icono propio, guarda <code>public/favicon.png</code> y añade dentro de <code>&lt;head&gt;</code>:</p>
+<pre><code class="language-html">&lt;link rel=&quot;icon&quot; type=&quot;image/png&quot; href=&quot;/favicon.png&quot;&gt;
+&lt;title&gt;Mi Pensión · Ventas y reservas&lt;/title&gt;
+</code></pre>
+<p>No añadas un segundo <code>&lt;title&gt;</code>: reemplaza el que ya existe. Revisa también el texto del pie dentro de <code>shell(content)</code> en <code>src/main.js</code> si quieres cambiar el nombre que aparece allí.</p>
+<h2>8. Revisar los cambios antes de compartirlos</h2>
+<p>Prueba acceso, reservas, Punto de venta y vista móvil. Cambiar CSS o un logotipo no requiere borrar ni recrear la base.</p>
+<pre><code class="language-sh">npm test
+npm run build
+npm run start:local
+</code></pre>
+<p>Detén primero <code>dev:local</code> con <strong>Ctrl+C</strong> para que no ocupe el puerto 3001. Tras compilar, <code>start:local</code> sirve la aplicación completa en <strong><a href="http://localhost:3001">http://localhost:3001</a></strong>. Usa <code>npm.cmd</code> en PowerShell si lo necesitas.</p>
+<p>La prueba normal usa SQLite aislado y omite explícitamente los casos que requieren PostgreSQL. Para ejecutar también la suite PostgreSQL, crea una <strong>segunda base de pruebas cuyo nombre termine en <code>_test</code></strong>, configura <code>POSTGRES_TEST_URL</code> en el entorno de esa terminal y ejecuta <code>npm run test:postgres</code>. No uses la base local en la que quieras conservar tus registros ni la de Render como destino de esa suite.</p>
+<h2>9. Qué incluye este ZIP y qué se conserva</h2>
+<ul>
+<li>Código completo de Foodsys con SQLite local opcional y PostgreSQL.</li>
+<li><code>compose.yaml</code> para levantar PostgreSQL 18, que Docker descarga cuando lo ejecutas.</li>
+<li><code>.env.example</code> con valores de demostración local, no credenciales de Render.</li>
+<li>Manual en HTML y Markdown, pruebas y guía de migración en <code>docs/postgresql.md</code>.</li>
+<li>No incluye <code>node_modules</code>, una base con datos reales ni ejecutables de PostgreSQL. <code>npm ci</code> y Docker los obtienen al preparar tu computadora.</li>
+</ul>
+<p>La base local permanece en su volumen Docker. Reiniciar la app, editar colores o recompilar no borra sus datos. Borrar el volumen, cambiar a otra base o eliminar una instalación PostgreSQL sí puede perderlos; conserva respaldos de los datos que sean importantes.</p>
+<p>Este ZIP sirve para hacer pruebas separadas. Modificarlo en tu computadora no actualiza Render. Para publicar una personalización, revisa los cambios de código, súbelos al repositorio y despliega manteniendo la misma <code>DATABASE_URL</code> de producción. <strong>No reemplaces en Render sus variables por los valores de <code>.env.example</code></strong>.</p>
+</main></body></html>
